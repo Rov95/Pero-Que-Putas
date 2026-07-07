@@ -3,7 +3,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import obtener_sesion
 from app.models.sala import Sala
-from app.schemas.sala import IniciarSala, JugadorLeer, SalaCrear, SalaLeer, UnirseSala
+from app.schemas.puntos import MarcadorFinalEntrada
+from app.schemas.sala import (
+    FinalizarRespuesta,
+    FinalizarSala,
+    IniciarSala,
+    JugadorLeer,
+    SalaCrear,
+    SalaLeer,
+    UnirseSala,
+)
 from app.services import juego as servicio_juego
 from app.services import salas as servicio_salas
 from app.websocket import eventos
@@ -75,3 +84,18 @@ async def iniciar_partida(
     await manager.difundir(codigo, eventos.turno_actual(sala.turno_actual, lector_payload))
 
     return _a_sala_leer(sala)
+
+
+@router.post("/{codigo}/finalizar", response_model=FinalizarRespuesta)
+async def finalizar_partida(
+    codigo: str, datos: FinalizarSala, sesion: AsyncSession = Depends(obtener_sesion)
+) -> FinalizarRespuesta:
+    sala, marcador_final = await servicio_salas.finalizar_partida(sesion, codigo, datos.usuario_id)
+
+    marcador_final_schemas = [MarcadorFinalEntrada(**entrada) for entrada in marcador_final]
+    await manager.difundir(
+        codigo,
+        eventos.partida_finalizada([entrada.model_dump(mode="json") for entrada in marcador_final_schemas]),
+    )
+
+    return FinalizarRespuesta(sala=_a_sala_leer(sala), marcador_final=marcador_final_schemas)

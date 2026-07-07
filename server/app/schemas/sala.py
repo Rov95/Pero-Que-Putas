@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.constants import EstadoSalaEnum
+from app.schemas.puntos import MarcadorFinalEntrada
 
 
 class SalaCrear(BaseModel):
@@ -15,6 +16,10 @@ class UnirseSala(BaseModel):
 
 
 class IniciarSala(BaseModel):
+    usuario_id: uuid.UUID
+
+
+class FinalizarSala(BaseModel):
     usuario_id: uuid.UUID
 
 
@@ -34,3 +39,8 @@ class SalaLeer(BaseModel):
     turno_actual: int
     creado_en: datetime
     jugadores: list[JugadorLeer]
+
+
+class FinalizarRespuesta(BaseModel):
+    sala: SalaLeer
+    marcador_final: list[MarcadorFinalEntrada]

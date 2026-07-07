@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.constants import EstadoSalaEnum
 from app.errores import ErrorAplicacion
+from app.models.marcador import MarcadorHistorico
 from app.models.sala import Sala, SalaJugador
 from app.models.usuario import Usuario
 
@@ -91,3 +92,69 @@ async def iniciar_partida(sesion: AsyncSession, codigo: str, usuario_id: uuid.UU
     await sesion.commit()
 
     return await obtener_sala_por_codigo(sesion, codigo)
+
+
+def _jugador_de_sala(sala: Sala, usuario_id: uuid.UUID) -> SalaJugador:
+    for jugador in sala.jugadores:
+        if jugador.usuario_id == usuario_id:
+            return jugador
+    raise ErrorAplicacion("Ese usuario no pertenece a esta sala", status_code=404)
+
+
+async def establecer_puntos(
+    sesion: AsyncSession, codigo: str, usuario_id: uuid.UUID, puntos: int
+) -> Sala:
+    sala = await obtener_sala_por_codigo(sesion, codigo)
+    jugador = _jugador_de_sala(sala, usuario_id)
+    jugador.puntos = puntos
+    await sesion.commit()
+    return await obtener_sala_por_codigo(sesion, codigo)
+
+
+async def reiniciar_puntos(sesion: AsyncSession, codigo: str) -> Sala:
+    sala = await obtener_sala_por_codigo(sesion, codigo)
+    for jugador in sala.jugadores:
+        jugador.puntos = 0
+    await sesion.commit()
+    return await obtener_sala_por_codigo(sesion, codigo)
+
+
+async def finalizar_partida(
+    sesion: AsyncSession, codigo: str, usuario_id: uuid.UUID
+) -> tuple[Sala, list[dict]]:
+    sala = await obtener_sala_por_codigo(sesion, codigo)
+    if sala.anfitrion_id != usuario_id:
+        raise ErrorAplicacion("Solo el anfitrión puede finalizar la partida", status_code=403)
+    if sala.estado != EstadoSalaEnum.EN_CURSO:
+        raise ErrorAplicacion("La partida no está en curso", status_code=409)
+
+    max_puntos = max(jugador.puntos for jugador in sala.jugadores)
+
+    marcador_final = []
+    for jugador in sala.jugadores:
+        gano = jugador.puntos == max_puntos
+        sesion.add(
+            MarcadorHistorico(
+                usuario_id=jugador.usuario_id,
+                sala_id=sala.id,
+                puntos_finales=jugador.puntos,
+                gano=gano,
+            )
+        )
+        marcador_final.append(
+            {
+                "usuario_id": jugador.usuario_id,
+                "username": jugador.usuario.username,
+                "puntos_finales": jugador.puntos,
+                "gano": gano,
+            }
+        )
+
+    for jugador in sala.jugadores:
+        jugador.puntos = 0
+    sala.estado = EstadoSalaEnum.FINALIZADA
+
+    await sesion.commit()
+
+    sala_actualizada = await obtener_sala_por_codigo(sesion, codigo)
+    return sala_actualizada, marcador_final

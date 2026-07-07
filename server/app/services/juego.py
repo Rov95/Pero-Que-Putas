@@ -162,7 +162,8 @@ async def avanzar_turno(sesion: AsyncSession, sala: Sala, usuario_id: uuid.UUID)
         )
 
     ronda_activa = await obtener_ronda_activa(sesion, sala.id)
-    if ronda_activa is not None and ronda_activa.estado != EstadoRondaEnum.RESUELTA:
+    ronda_sin_resolver = ronda_activa is not None and ronda_activa.estado != EstadoRondaEnum.RESUELTA
+    if ronda_sin_resolver and lector.conectado:
         raise ErrorAplicacion("Termina la ronda actual antes de continuar", status_code=409)
 
     sala.turno_actual += 1

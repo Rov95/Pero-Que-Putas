@@ -176,3 +176,25 @@ async def test_no_avanza_turno_con_ronda_sin_resolver(sesion_prueba: AsyncSessio
     with pytest.raises(ErrorAplicacion) as info:
         await servicio_juego.avanzar_turno(sesion_prueba, sala, lector_id)
     assert info.value.status_code == 409
+
+
+async def test_anfitrion_fuerza_turno_si_lector_desconectado(sesion_prueba: AsyncSession) -> None:
+    sala, usuarios = await _preparar_sala(sesion_prueba, 2, "desc")
+    anfitrion_id = usuarios[0]
+    # anfitrion_id tiene orden_turno 0; forzamos turno_actual=1 para que el lector actual
+    # (orden_turno == turno_actual) sea un jugador distinto del anfitrión.
+    sala.turno_actual = 1
+    await sesion_prueba.commit()
+    sala = await servicio_salas.obtener_sala_por_codigo(sesion_prueba, sala.codigo)
+
+    lector = servicio_juego.lector_actual(sala)
+    await servicio_juego.robar_carta(sesion_prueba, sala, lector.usuario_id)
+
+    lector.conectado = False
+    await sesion_prueba.commit()
+    sala = await servicio_salas.obtener_sala_por_codigo(sesion_prueba, sala.codigo)
+
+    # El anfitrión puede forzar el avance aunque la ronda quedó sin resolver,
+    # porque el lector actual está desconectado (decisión #7).
+    sala_actualizada = await servicio_juego.avanzar_turno(sesion_prueba, sala, anfitrion_id)
+    assert sala_actualizada.turno_actual == 2

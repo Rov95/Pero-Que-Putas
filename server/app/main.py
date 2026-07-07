@@ -1,9 +1,16 @@
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.errores import ErrorAplicacion
+from app.manejadores import (
+    manejar_error_aplicacion,
+    manejar_error_generico,
+    manejar_error_integridad,
+    manejar_error_validacion,
+)
 from app.routers import constantes, preguntas, puntos, salas, usuarios
 from app.websocket.router import router as websocket_router
 
@@ -26,9 +33,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.exception_handler(ErrorAplicacion)
-    async def manejar_error_aplicacion(request: Request, exc: ErrorAplicacion) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"detalle": exc.detalle})
+    app.add_exception_handler(ErrorAplicacion, manejar_error_aplicacion)
+    app.add_exception_handler(RequestValidationError, manejar_error_validacion)
+    app.add_exception_handler(IntegrityError, manejar_error_integridad)
+    app.add_exception_handler(Exception, manejar_error_generico)
 
     app.include_router(api_router)
     app.include_router(usuarios.router)

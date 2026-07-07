@@ -16,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants import EstadoRondaEnum, PrediccionEnum, ResultadoEnum
 from app.database import Base
+from app.models.pregunta import Pregunta
 
 
 class Ronda(Base):
@@ -66,6 +67,7 @@ class Ronda(Base):
     acierto: Mapped[bool | None] = mapped_column(nullable=True)
 
     votos: Mapped[list["Voto"]] = relationship(back_populates="ronda", cascade="all, delete-orphan")
+    pregunta: Mapped["Pregunta"] = relationship()
 
 
 class Voto(Base):

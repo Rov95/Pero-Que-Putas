@@ -57,3 +57,12 @@ async def client(app_prueba: FastAPI) -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app_prueba)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+async def sesion_prueba(
+    engine: AsyncEngine, limpiar_bd: None
+) -> AsyncGenerator[AsyncSession, None]:
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        yield session

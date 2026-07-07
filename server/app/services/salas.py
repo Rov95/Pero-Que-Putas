@@ -31,6 +31,7 @@ async def obtener_sala_por_codigo(sesion: AsyncSession, codigo: str) -> Sala:
         select(Sala)
         .options(selectinload(Sala.jugadores).selectinload(SalaJugador.usuario))
         .where(Sala.codigo == codigo)
+        .execution_options(populate_existing=True)
     )
     if sala is None:
         raise ErrorAplicacion("Sala no encontrada", status_code=404)
@@ -69,7 +70,6 @@ async def unirse_a_sala(sesion: AsyncSession, codigo: str, usuario_id: uuid.UUID
     if not ya_unido:
         sesion.add(SalaJugador(sala_id=sala.id, usuario_id=usuario_id))
         await sesion.commit()
-        sesion.expire_all()
 
     return await obtener_sala_por_codigo(sesion, codigo)
 

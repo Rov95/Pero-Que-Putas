@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.errores import ErrorAplicacion
-from app.routers import preguntas, usuarios
+from app.routers import constantes, preguntas, usuarios
 
 api_router = APIRouter(prefix="/api")
 
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
     app.include_router(usuarios.router)
     app.include_router(preguntas.router)
+    app.include_router(constantes.router)
 
     return app
 

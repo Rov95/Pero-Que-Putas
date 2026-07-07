@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.errores import ErrorAplicacion
 from app.routers import constantes, preguntas, salas, usuarios
+from app.websocket.router import router as websocket_router
 
 api_router = APIRouter(prefix="/api")
 
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(preguntas.router)
     app.include_router(constantes.router)
     app.include_router(salas.router)
+    app.include_router(websocket_router)
 
     return app
 

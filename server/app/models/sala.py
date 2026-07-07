@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.constants import EstadoSalaEnum
 from app.database import Base
+from app.models.usuario import Usuario
 
 
 class Sala(Base):
@@ -71,3 +72,4 @@ class SalaJugador(Base):
     )
 
     sala: Mapped["Sala"] = relationship(back_populates="jugadores")
+    usuario: Mapped["Usuario"] = relationship()

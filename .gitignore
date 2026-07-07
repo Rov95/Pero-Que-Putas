@@ -1,0 +1,9 @@
+# Postgres local sin Docker (scripts/db.py) — datos de pgserver
+.local/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# SO / editores
+.DS_Store

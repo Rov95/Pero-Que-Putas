@@ -109,18 +109,44 @@ Detalles del backend en [`server/README.md`](server/README.md); del frontend en
 
 ---
 
+## Modo práctica (jugar solo, contra bots)
+
+No hace falta convencer a nadie para probar el juego: en la pantalla de inicio, el botón
+**"Modo práctica"** crea una sala donde vos sos el anfitrión y **2 bots** ya están unidos y
+conectados. El lobby, la partida y el podio funcionan exactamente igual que con humanos —
+los bots son clientes WebSocket reales, no una simulación aparte.
+
+- Los bots juegan **al azar**: predicción y voto uniformemente aleatorios entre las
+  opciones válidas. No son un rival, son una herramienta para probar el flujo completo
+  (lobby → rondas → podio) vos solo.
+- Tienen pequeños retrasos (con jitter) antes de cada acción para que se sientan
+  "humanos" y te dé tiempo de leer — configurables por variables de entorno del backend,
+  ver [`server/README.md`](server/README.md#modo-práctica).
+- Al finalizar la partida, los bots quedan registrados en el **marcador histórico** igual
+  que cualquier jugador (es la opción más simple; es una herramienta de prueba, no hace
+  falta filtrarlos).
+- Requiere al menos **1 pregunta** creada en `/preguntas` — igual que cualquier partida.
+
+Bajo el capó: `POST /api/salas/practica` crea la sala, une 2 usuarios `Bot-*` y lanza sus
+tareas de cliente WebSocket in-process contra la propia app.
+
+---
+
 ## Test end-to-end de toda la app
 
-Un solo comando arranca el stack completo y juega **una partida entera con 3 navegadores**
-(registro → crear/unirse a la sala → iniciar → robar carta → predicción → votos →
-revelación → finalizar → podio → marcador histórico), y al terminar apaga todo:
+Un solo comando arranca el stack completo y corre **dos partidas completas** (registro →
+crear/unirse a la sala → iniciar → robar carta → predicción → votos → revelación →
+finalizar → podio → marcador histórico): una con 3 navegadores humanos y otra en **modo
+práctica** (1 navegador + 2 bots), y al terminar apaga todo:
 
 ```bash
 ./scripts/e2e.sh
 ```
 
 Usa el **Chrome del sistema** (canal `chrome` de Playwright), así que **no descarga
-navegadores**. El test vive en [`client/e2e/juego-completo.spec.ts`](client/e2e/juego-completo.spec.ts).
+navegadores**. Los tests viven en
+[`client/e2e/juego-completo.spec.ts`](client/e2e/juego-completo.spec.ts) y
+[`client/e2e/practica.spec.ts`](client/e2e/practica.spec.ts).
 
 Si ya tienes el stack corriendo (p. ej. con `./scripts/dev.sh`), puedes correr solo el
 test del navegador:

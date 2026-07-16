@@ -21,6 +21,21 @@ npm run dev            # http://localhost:5173
 Scripts disponibles: `npm run build`, `npm run lint`, `npm test` (Vitest), `npm run format`
 (Prettier).
 
+## Modo práctica
+
+Botón **"Modo práctica"** en la pantalla de inicio (junto a "Crear sala"): dispara
+`crearPractica` (`POST /api/salas/practica`) y navega directo a `/sala/{codigo}` al
+éxito. El backend crea la sala con el usuario actual de anfitrión y 2 bots ya conectados
+por WebSocket, así que el lobby llega solo a "3 conectados" y el botón "Iniciar partida"
+queda habilitado sin necesitar un segundo humano. A partir de ahí, el cliente no distingue
+bots de jugadores humanos — mismo lobby, mismo `VistaJuego`, mismo podio. Si el 409 de
+"sin preguntas" llega del backend, se muestra tal cual en un toast. Ver
+[`server/README.md`](../server/README.md#modo-práctica) para los detalles del backend
+(retrasos configurables, limpieza de tareas, etc).
+
+E2E dedicado: [`e2e/practica.spec.ts`](e2e/practica.spec.ts) (1 solo navegador humano +
+2 bots hasta el podio).
+
 ## Smoke test manual
 
 1. Levanta el backend (Postgres + `uvicorn app.main:app`).
@@ -38,6 +53,9 @@ Scripts disponibles: `npm run build`, `npm run lint`, `npm test` (Vitest), `npm 
 
 Este flujo se verificó de punta a punta contra un backend real (Postgres vía `pgserver`
 embebido) con 3 navegadores headless simulando 3 usuarios simultáneos.
+
+Para probar el flujo completo vos solo (sin abrir 3 pestañas), usa **"Modo práctica"**
+desde la pantalla de inicio en vez de los pasos 3-5.
 
 ## Limitaciones conocidas del backend (no arreglables solo desde el frontend)
 

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -142,6 +142,26 @@ async def _resolver_ronda(sesion: AsyncSession, sala: Sala, ronda: Ronda) -> Non
         resultado = ResultadoEnum.EMPATE
 
     acierto = ronda.prediccion is not None and ronda.prediccion.value == resultado.value
+
+    # Guarda de idempotencia: dos votos casi simultáneos (cada uno en su propia sesión
+    # de WS) pueden cruzar el umbral de votos_esperados a la vez y llegar aquí los dos.
+    # Esta actualización atómica solo afecta la fila si todavía sigue "votando"; bajo
+    # READ COMMITTED, si dos UPDATE concurrentes chocan, Postgres serializa la segunda
+    # contra el estado ya confirmado por la primera, así que como mucho una gana.
+    # synchronize_session=False: por defecto SQLAlchemy "sincroniza" evaluando el WHERE
+    # contra el objeto ya cargado en memoria (no contra lo que realmente cambió en la
+    # fila), así que sin esto el objeto local se marca RESUELTA aunque el UPDATE real
+    # haya afectado 0 filas — justo el caso que esta guarda necesita distinguir.
+    resultado_update = await sesion.execute(
+        update(Ronda)
+        .where(Ronda.id == ronda.id, Ronda.estado == EstadoRondaEnum.VOTANDO)
+        .values(resultado=resultado, acierto=acierto, estado=EstadoRondaEnum.RESUELTA)
+        .execution_options(synchronize_session=False)
+    )
+    if resultado_update.rowcount == 0:
+        # Otra sesión ya resolvió esta ronda: no-op, para no duplicar el
+        # resultado_ronda ni puntuar dos veces al lector.
+        return
 
     ronda.resultado = resultado
     ronda.acierto = acierto

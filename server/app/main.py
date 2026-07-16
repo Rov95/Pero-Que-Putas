@@ -1,8 +1,12 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
 
+from app.bots.registro import registro as registro_bots
 from app.config import settings
 from app.errores import ErrorAplicacion
 from app.manejadores import (
@@ -22,8 +26,14 @@ async def salud() -> dict[str, str]:
     return {"estado": "ok"}
 
 
+@asynccontextmanager
+async def _ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await registro_bots.detener_todos()
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Pero Qué Putas")
+    app = FastAPI(title="Pero Qué Putas", lifespan=_ciclo_de_vida)
 
     app.add_middleware(
         CORSMiddleware,

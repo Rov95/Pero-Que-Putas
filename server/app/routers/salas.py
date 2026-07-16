@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bots.registro import registro as registro_bots
 from app.database import obtener_sesion
 from app.models.sala import Sala
 from app.schemas.puntos import MarcadorFinalEntrada
@@ -9,6 +10,7 @@ from app.schemas.sala import (
     FinalizarSala,
     IniciarSala,
     JugadorLeer,
+    PracticaCrear,
     SalaCrear,
     SalaLeer,
     UnirseSala,
@@ -51,6 +53,15 @@ async def crear_sala(
     datos: SalaCrear, sesion: AsyncSession = Depends(obtener_sesion)
 ) -> SalaLeer:
     sala = await servicio_salas.crear_sala(sesion, datos.usuario_id)
+    return _a_sala_leer(sala)
+
+
+@router.post("/practica", response_model=SalaLeer, status_code=status.HTTP_201_CREATED)
+async def crear_sala_practica(
+    datos: PracticaCrear, request: Request, sesion: AsyncSession = Depends(obtener_sesion)
+) -> SalaLeer:
+    sala, bots = await servicio_salas.crear_sala_practica(sesion, datos.usuario_id)
+    registro_bots.iniciar_bots(request.app, sala.codigo, bots)
     return _a_sala_leer(sala)
 
 

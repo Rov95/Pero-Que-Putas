@@ -5,15 +5,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.bots.fabrica import crear_usuarios_bot
 from app.constants import EstadoSalaEnum
 from app.errores import ErrorAplicacion
 from app.models.marcador import MarcadorHistorico
+from app.models.pregunta import Pregunta
 from app.models.sala import Sala, SalaJugador
 from app.models.usuario import Usuario
 
 ALFABETO_CODIGO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # sin 0/O, 1/I/L
 LONGITUD_CODIGO = 6
 INTENTOS_CODIGO = 10
+CANTIDAD_BOTS_PRACTICA = 2
 
 
 def _generar_codigo() -> str:
@@ -58,6 +61,29 @@ async def crear_sala(sesion: AsyncSession, usuario_id: uuid.UUID) -> Sala:
     await sesion.commit()
 
     return await obtener_sala_por_codigo(sesion, codigo)
+
+
+async def crear_sala_practica(
+    sesion: AsyncSession, usuario_id: uuid.UUID
+) -> tuple[Sala, list[Usuario]]:
+    await _obtener_usuario_o_404(sesion, usuario_id)
+
+    hay_pregunta = await sesion.scalar(select(Pregunta.id).limit(1))
+    if hay_pregunta is None:
+        raise ErrorAplicacion(
+            "No hay preguntas disponibles. Crea algunas en la pantalla de preguntas "
+            "antes de practicar.",
+            status_code=409,
+        )
+
+    sala = await crear_sala(sesion, usuario_id)
+    bots = await crear_usuarios_bot(sesion, CANTIDAD_BOTS_PRACTICA)
+    await sesion.commit()
+
+    for bot in bots:
+        sala = await unirse_a_sala(sesion, sala.codigo, bot.id)
+
+    return sala, bots
 
 
 async def unirse_a_sala(sesion: AsyncSession, codigo: str, usuario_id: uuid.UUID) -> Sala:

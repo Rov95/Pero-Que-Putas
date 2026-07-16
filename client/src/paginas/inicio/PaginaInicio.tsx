@@ -5,6 +5,7 @@ import { useAppSelector } from '../../store/hooks'
 import { almacenamiento } from '../../utilidades/almacenamiento'
 import { useEnfoqueAlMontar } from '../../utilidades/useEnfoqueAlMontar'
 import BotonCrearSala from './BotonCrearSala'
+import BotonPractica from './BotonPractica'
 import FormularioRegistro from './FormularioRegistro'
 import FormularioUnirse from './FormularioUnirse'
 
@@ -61,6 +62,7 @@ export default function PaginaInicio() {
           )}
 
           <BotonCrearSala />
+          <BotonPractica />
 
           <div className="flex w-full items-center gap-3 text-white/30">
             <span className="h-px flex-1 bg-white/10" />

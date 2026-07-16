@@ -1,6 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { describe, expect, it } from 'vitest'
-import salaReducer, { salaActions, sincronizarSala } from '../../store/slices/salaSlice'
+import salaReducer, {
+  crearPractica,
+  salaActions,
+  sincronizarSala,
+} from '../../store/slices/salaSlice'
 import type { Sala } from '../../tipos/modelos'
 
 function crearStorePrueba() {
@@ -311,5 +315,38 @@ describe('salaSlice — mapeo de eventos WS entrantes', () => {
     store.dispatch(salaActions.turnoActual({ numero: 1, lector: { usuario_id: 'u2', username: 'beto' } }))
     expect(store.getState().sala.sala?.turno_actual).toBe(1)
     expect(store.getState().sala.ronda.etapa).toBeNull()
+  })
+})
+
+describe('salaSlice — crearPractica', () => {
+  it('pending activa cargando', () => {
+    const store = crearStorePrueba()
+
+    store.dispatch(crearPractica.pending('req-1', undefined))
+
+    expect(store.getState().sala.cargando).toBe(true)
+  })
+
+  it('fulfilled asigna state.sala', () => {
+    const store = crearStorePrueba()
+    const sala = salaDePrueba()
+
+    store.dispatch(crearPractica.fulfilled(sala, 'req-1', undefined))
+
+    expect(store.getState().sala.sala).toEqual(sala)
+    expect(store.getState().sala.cargando).toBe(false)
+  })
+
+  it('rejected deja sala=null y guarda el error', () => {
+    const store = crearStorePrueba()
+
+    store.dispatch(
+      crearPractica.rejected(null, 'req-1', undefined, 'No hay preguntas disponibles'),
+    )
+
+    const estado = store.getState().sala
+    expect(estado.sala).toBeNull()
+    expect(estado.error).toBe('No hay preguntas disponibles')
+    expect(estado.cargando).toBe(false)
   })
 })

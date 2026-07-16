@@ -106,6 +106,33 @@ Set in `.env` (see `.env.example`):
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://pero_que_putas:pero_que_putas@localhost:5432/pero_que_putas` | Async SQLAlchemy connection string |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed frontend origins |
+| `BOTS_RETRASO_MIN_MS` | `800` | Lower bound of the random delay before a bot sends robar_carta/prediccion/voto |
+| `BOTS_RETRASO_MAX_MS` | `2500` | Upper bound of that same delay |
+| `BOTS_RETRASO_SIGUIENTE_TURNO_MS` | `4000` | Base delay (before jitter, up to `BOTS_RETRASO_MAX_MS` extra) before a bot-lector sends `siguiente_turno`, so the human has time to read the round result |
+| `BOTS_VIDA_MAXIMA_SEGUNDOS` | `1800` | Hard cap on how long a bot's WS task stays alive (abandoned practice room cleanup) |
+
+## Modo práctica
+
+`POST /api/salas/practica` (body `{"usuario_id": "<uuid>"}`) creates a sala with that
+user as anfitrión, generates 2 `Bot-<Apodo>-<sufijo>` users, joins them, and launches one
+in-process WebSocket client task per bot (`app/bots/`) — real WS connections against the
+app's own ASGI callable via `httpx_ws` + `ASGIWebSocketTransport`, not a simulation. Each
+bot follows a fixed reaction table (see `app/bots/jugador.py`): uniformly random
+prediction/vote, small randomized delays (`BOTS_RETRASO_*` above) before every action, and
+terminates cleanly on `partida_finalizada`, on its own WS closing, or when
+`BOTS_VIDA_MAXIMA_SEGUNDOS` elapses (whichever first) — never via a hard task
+cancellation while the socket is open, since that was found to corrupt the shared
+DB connection pool (see the comment on `INTERVALO_SONDEO_SEGUNDOS` in `jugador.py`).
+
+`app/bots/registro.py` tracks the running tasks per sala (`RegistroBots`); the app's
+`lifespan` stops all of them on shutdown. Returns 409 (same shape as every other error,
+`{"detalle": "..."}`) if the sala has zero preguntas — a practice game can't draw a card
+either.
+
+Bots are ordinary `usuarios` and `sala_jugadores` rows: they show up in the lobby's player
+list like anyone else, and `finalizar` writes their rows into `marcador_historico` same as
+a human's — accepted as the simplest option since this is a dev/practice tool, not
+something the historic scoreboard needs to filter.
 
 ## Project layout
 

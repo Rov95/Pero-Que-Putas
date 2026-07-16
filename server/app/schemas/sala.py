@@ -23,6 +23,10 @@ class FinalizarSala(BaseModel):
     usuario_id: uuid.UUID
 
 
+class PracticaCrear(BaseModel):
+    usuario_id: uuid.UUID
+
+
 class JugadorLeer(BaseModel):
     usuario_id: uuid.UUID
     username: str

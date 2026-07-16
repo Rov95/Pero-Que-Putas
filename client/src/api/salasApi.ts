@@ -4,6 +4,7 @@ import type { PuntoJugador, Sala } from '../tipos/modelos'
 
 export const salasApi = {
   crear: (body: AccionSalaBody) => clienteHttp.post<Sala>('/api/salas', body),
+  crearPractica: (body: AccionSalaBody) => clienteHttp.post<Sala>('/api/salas/practica', body),
   unirse: (codigo: string, body: AccionSalaBody) =>
     clienteHttp.post<Sala>(`/api/salas/${codigo}/unirse`, body),
   obtener: (codigo: string) => clienteHttp.get<Sala>(`/api/salas/${codigo}`),

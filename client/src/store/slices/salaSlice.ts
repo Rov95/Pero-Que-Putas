@@ -81,6 +81,20 @@ export const crearSala = createAsyncThunk<Sala, void, { state: RootState; reject
   },
 )
 
+export const crearPractica = createAsyncThunk<
+  Sala,
+  void,
+  { state: RootState; rejectValue: string }
+>('sala/crearPractica', async (_, { getState, rejectWithValue }) => {
+  const usuarioId = getState().sesion.usuario?.id
+  if (!usuarioId) return rejectWithValue('Debes iniciar sesión primero')
+  try {
+    return await salasApi.crearPractica({ usuario_id: usuarioId })
+  } catch (error) {
+    return rejectWithValue(detalleDeError(error))
+  }
+})
+
 export const unirseSala = createAsyncThunk<
   Sala,
   string,
@@ -283,6 +297,19 @@ const salaSlice = createSlice({
         state.sala = action.payload
       })
       .addCase(crearSala.rejected, (state, action) => {
+        state.cargando = false
+        state.error = action.payload ?? 'Error de conexión con el servidor'
+      })
+
+      .addCase(crearPractica.pending, (state) => {
+        state.cargando = true
+        state.error = null
+      })
+      .addCase(crearPractica.fulfilled, (state, action) => {
+        state.cargando = false
+        state.sala = action.payload
+      })
+      .addCase(crearPractica.rejected, (state, action) => {
         state.cargando = false
         state.error = action.payload ?? 'Error de conexión con el servidor'
       })

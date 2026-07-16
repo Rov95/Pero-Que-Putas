@@ -20,7 +20,7 @@ async def _preparar_sala(
     sesion.add_all(usuarios)
     await sesion.flush()
 
-    pregunta = Pregunta()
+    pregunta = Pregunta(enunciado="¿Qué prefieres?")
     pregunta.opciones = [Opcion(numero=1, texto="Opción 1"), Opcion(numero=2, texto="Opción 2")]
     sesion.add(pregunta)
 
@@ -149,6 +149,20 @@ async def test_no_repite_pregunta_ya_usada(sesion_prueba: AsyncSession) -> None:
 
     with pytest.raises(ErrorAplicacion) as info:
         await servicio_juego.robar_carta(sesion_prueba, sala, votantes[0])
+    assert info.value.status_code == 409
+    assert "no quedan preguntas" in info.value.detalle.lower()
+
+
+async def test_robar_carta_excluye_preguntas_eliminadas(sesion_prueba: AsyncSession) -> None:
+    sala, usuarios = await _preparar_sala(sesion_prueba, 2, "e")
+    lector_id, *_ = usuarios
+
+    pregunta = await sesion_prueba.scalar(select(Pregunta))
+    pregunta.eliminada = True
+    await sesion_prueba.commit()
+
+    with pytest.raises(ErrorAplicacion) as info:
+        await servicio_juego.robar_carta(sesion_prueba, sala, lector_id)
     assert info.value.status_code == 409
     assert "no quedan preguntas" in info.value.detalle.lower()
 

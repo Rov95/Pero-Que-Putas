@@ -47,7 +47,7 @@ async def robar_carta(sesion: AsyncSession, sala: Sala, usuario_id: uuid.UUID) -
     pregunta = await sesion.scalar(
         select(Pregunta)
         .options(selectinload(Pregunta.opciones))
-        .where(Pregunta.id.notin_(usadas))
+        .where(Pregunta.eliminada.is_(False), Pregunta.id.notin_(usadas))
         .order_by(func.random())
         .limit(1)
     )

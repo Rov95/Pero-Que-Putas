@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import Boton from '../../componentes/Boton'
-import type { OpcionesPregunta } from '../../tipos/api'
+import type { CrearPreguntaBody } from '../../tipos/api'
 
 interface Props {
-  valorInicial?: OpcionesPregunta
+  valorInicial?: CrearPreguntaBody
   textoBoton: string
-  onEnviar: (valores: OpcionesPregunta) => Promise<void>
+  onEnviar: (valores: CrearPreguntaBody) => Promise<void>
   onCancelar?: () => void
 }
 
@@ -15,6 +15,7 @@ export default function FormularioPregunta({
   onEnviar,
   onCancelar,
 }: Props) {
+  const [enunciado, setEnunciado] = useState(valorInicial?.enunciado ?? '')
   const [opcion1, setOpcion1] = useState(valorInicial?.opcion_1 ?? '')
   const [opcion2, setOpcion2] = useState(valorInicial?.opcion_2 ?? '')
   const [enviando, setEnviando] = useState(false)
@@ -22,15 +23,20 @@ export default function FormularioPregunta({
 
   async function manejarEnvio(evento: FormEvent) {
     evento.preventDefault()
-    if (!opcion1.trim() || !opcion2.trim()) {
-      setError('Ambas opciones son obligatorias')
+    if (!enunciado.trim() || !opcion1.trim() || !opcion2.trim()) {
+      setError('La pregunta y ambas opciones son obligatorias')
       return
     }
     setError(null)
     setEnviando(true)
     try {
-      await onEnviar({ opcion_1: opcion1.trim(), opcion_2: opcion2.trim() })
+      await onEnviar({
+        enunciado: enunciado.trim(),
+        opcion_1: opcion1.trim(),
+        opcion_2: opcion2.trim(),
+      })
       if (!valorInicial) {
+        setEnunciado('')
         setOpcion1('')
         setOpcion2('')
       }
@@ -46,6 +52,16 @@ export default function FormularioPregunta({
       onSubmit={manejarEnvio}
       className="flex flex-col gap-3 rounded-2xl border border-white/10 p-4"
     >
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-white/80">
+        Pregunta
+        <textarea
+          value={enunciado}
+          onChange={(evento) => setEnunciado(evento.target.value)}
+          placeholder="p. ej. Si mañana acaba el mundo, ¿qué harías con el tiempo que te queda?"
+          rows={2}
+          className="rounded-xl border border-white/10 bg-superficie px-4 py-2.5 text-white placeholder:text-white/30 focus:border-primario-500/60 focus:ring-2 focus:ring-primario-500/30 focus:outline-none"
+        />
+      </label>
       <label className="flex flex-col gap-1.5 text-sm font-medium text-white/80">
         Opción 1
         <textarea

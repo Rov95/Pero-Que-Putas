@@ -10,7 +10,12 @@ async def _crear_usuario(client: AsyncClient, username: str) -> str:
 
 async def _crear_pregunta(client: AsyncClient) -> None:
     await client.post(
-        "/api/preguntas", json={"opcion_1": "Pizza con piña", "opcion_2": "Pizza sin piña"}
+        "/api/preguntas",
+        json={
+            "enunciado": "¿Cómo prefieres la pizza?",
+            "opcion_1": "Pizza con piña",
+            "opcion_2": "Pizza sin piña",
+        },
     )
 
 

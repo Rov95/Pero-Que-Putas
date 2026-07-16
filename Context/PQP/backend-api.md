@@ -2,8 +2,9 @@
 
 > **Purpose of this file:** complete, verified map of the backend (REST + WebSocket) for a Claude
 > agent building the frontend. Everything here was extracted from the implemented code at
-> `~/Desktop/Portfolio/Pero-Que-Putas/server` (branch `main`, all 10 plan phases done, 61 tests green).
-> When in doubt, the backend code is the source of truth — this doc mirrors it as of 2026-07-07.
+> `~/Desktop/Portfolio/Pero-Que-Putas/server` (branch `main`, all 10 plan phases + Modo práctica
+> done, 77 tests green). When in doubt, the backend code is the source of truth — this doc
+> mirrors it as of 2026-07-16.
 
 ---
 
@@ -14,7 +15,9 @@
 1. Players gather in a **sala** (room) identified by a 6-character invite **codigo**.
 2. The **anfitrión** (host = sala creator) starts the game; players get a shuffled turn order.
 3. Each round, one player is the **lector** (reader). The lector:
-   - Draws a dilemma card (**pregunta** with exactly two absurd options, Opción 1 / Opción 2),
+   - Draws a dilemma card (**pregunta**: an `enunciado` — the question text, e.g. "Si mañana
+     acaba el mundo, ¿qué harías con el tiempo que te queda?" — plus its exactly two absurd
+     options, Opción 1 / Opción 2),
    - Reads it aloud (physically), then makes a **secret prediction** of how the group will vote.
 4. All **other** players vote simultaneously: 1 = Opción 1, 2 = Opción 2 (in person: 1 or 2 fingers).
 5. Votes resolve automatically when the last expected vote arrives:
@@ -84,6 +87,7 @@ interface Opcion {
 
 interface Pregunta {
   id: string;
+  enunciado: string;     // the question text of the card
   creado_en: string;
   opciones: Opcion[];    // always exactly 2, ordered by numero
 }
@@ -168,19 +172,31 @@ const soyAnfitrion = sala.anfitrion_id === miUsuarioId;
 - Query: `desplazamiento` ≥ 0 (offset, default 0); `limite` 1–100 (default 20)
 - `200` → `Pregunta[]` (each embeds both `opciones`), ordered by `creado_en`
 
-**`POST /api/preguntas`** — create card (pregunta + its 2 options, atomic)
-- Body: `{ "opcion_1": string, "opcion_2": string }` (both non-empty)
+**`POST /api/preguntas`** — create card (enunciado + its 2 options, atomic)
+- Body: `{ "enunciado": string, "opcion_1": string, "opcion_2": string }` (all non-empty)
 - `201` → `Pregunta`
 
 **`GET /api/preguntas/{id}`** → `200 Pregunta` · `404 "Pregunta no encontrada"`
 
+**`PUT /api/preguntas/{id}`** — full-card update (enunciado + both option texts)
+- Body: `{ "enunciado": string, "opcion_1": string, "opcion_2": string }` (all non-empty)
+- `200` → `Pregunta` · `404 "Pregunta no encontrada"` · `422`
+- This is what the frontend's edit flow uses.
+
 **`GET /api/preguntas/{id}/opciones`** → `200 { "opcion_1": string, "opcion_2": string }`
+(options-only sub-resource; no UI uses it)
 
-**`PUT /api/preguntas/{id}/opciones`** — replace both option texts
+**`PUT /api/preguntas/{id}/opciones`** — replace both option texts (does NOT touch `enunciado`)
 - Body: `{ "opcion_1": string, "opcion_2": string }`
-- `200` → `{ "opcion_1", "opcion_2" }`
+- `200` → `{ "opcion_1", "opcion_2" }` (no UI uses it — superseded by `PUT /api/preguntas/{id}`)
 
-**`DELETE /api/preguntas/{id}`** → `204` (cascades to opciones) · `404`
+**`DELETE /api/preguntas/{id}`** → `204` · `404`
+- If the card was **never played**, the row is hard-deleted (cascades to opciones).
+- If any ronda references it (`rondas.pregunta_id` has no `ON DELETE`), it is
+  **soft-deleted** instead: `preguntas.eliminada = true`. Same `204`; the card
+  disappears from `GET /api/preguntas`, `GET/PUT /{id}` return `404`, and it is
+  never drawn again — but round history and any active round stay intact.
+  (Before 2026-07-16 this case incorrectly surfaced as a `409` FK conflict.)
 
 ### 4.4 Constantes
 
@@ -193,6 +209,18 @@ const soyAnfitrion = sala.anfitrion_id === miUsuarioId;
 **`POST /api/salas`** — create room; creator becomes anfitrión AND is auto-joined as a player
 - Body: `{ "usuario_id": string }`
 - `201` → `Sala` (grab `codigo` to share/join) · `404 "Usuario no encontrado"`
+
+**`POST /api/salas/practica`** — Modo práctica: create a room with the caller as anfitrión
+**plus 2 bots** already created and joined (see §5.6). The server launches one in-process WS
+client task per bot right after responding, so the lobby reaches "3 conectados" by itself
+within a couple of seconds — no second human needed to pass the frontend's min-2 gate.
+- Body: `{ "usuario_id": string }`
+- `201` → `Sala` (3 jugadores: the human + 2 `Bot-<Apodo>-<sufijo>`; the bots may still show
+  `conectado=false` in this response — they connect asynchronously moments later and the
+  usual `jugador_unido` events arrive over the WS)
+- `404 "Usuario no encontrado"` · `409 "No hay preguntas disponibles. Crea algunas en la
+  pantalla de preguntas antes de practicar."` (checked upfront — a practice game can't draw
+  cards from an empty deck either)
 
 **`POST /api/salas/{codigo}/unirse`** — join room
 - Body: `{ "usuario_id": string }`
@@ -286,7 +314,7 @@ WS ws://localhost:8000/ws/salas/{codigo}?usuario_id={uuid}
 | `jugador_salio` | `{ "usuario_id", "username" }` | someone disconnects |
 | `partida_iniciada` | `{ "orden": [{ "usuario_id", "username", "orden_turno" }], "lector": { "usuario_id", "username" } }` | host called REST `iniciar`; `orden` is sorted by `orden_turno` |
 | `turno_actual` | `{ "numero": int, "lector": { "usuario_id", "username" } }` | right after `partida_iniciada`, and after every accepted `siguiente_turno` |
-| `carta_robada` | `{ "ronda_id": uuid, "pregunta": { "id", "opcion_1", "opcion_2" } }` | lector drew a card; UI shows the two options to everyone |
+| `carta_robada` | `{ "ronda_id": uuid, "pregunta": { "id", "enunciado", "opcion_1", "opcion_2" } }` | lector drew a card; UI shows the question + two options to everyone |
 | `prediccion_registrada` | `{ "lector_id": uuid }` | lector locked a prediction. **Never contains the prediction itself** — voting UI opens for non-lectors |
 | `voto_registrado` | `{ "votos_recibidos": int, "votos_esperados": int }` | each accepted vote. **Never says who voted what.** Show progress (e.g. 2/3) |
 | `resultado_ronda` | `{ "votos": [{ "usuario_id", "username", "opcion" }], "resultado", "prediccion", "acierto": bool, "puntos_lector": int }` | fires automatically right after the `voto_registrado` of the final expected vote — the big reveal: every vote, the result, the secret prediction, hit/miss, lector's new total |
@@ -313,6 +341,29 @@ endpoint. Don't design UI that expects them earlier.
 
 `votos_esperados` = number of players with `conectado=true` excluding the lector, evaluated
 per vote — it can change mid-round if someone disconnects.
+
+### 5.6 Bots (Modo práctica) — what they look like on the wire
+
+The 2 bots created by `POST /api/salas/practica` (§4.5) are **indistinguishable from human
+players** to any client: ordinary `usuarios` rows (username `Bot-<Apodo>-<sufijo>`, e.g.
+`Bot-Luna-7XK2`), real WebSocket connections (in-process tasks inside the backend,
+`server/app/bots/`), ordinary `jugador_unido` / `voto_registrado` / `resultado_ronda`
+events, ordinary rows in the podium and in `GET /api/marcador` (accepted trade-off: the
+historic scoreboard does not filter them). The frontend needs — and has — zero
+special-casing.
+
+Behavior (server-side, `app/bots/jugador.py`; delays configurable via server env vars):
+
+- Every action is preceded by a random delay in `BOTS_RETRASO_MIN_MS`–`BOTS_RETRASO_MAX_MS`
+  (defaults 800–2500 ms) so the pacing feels human.
+- As votante: votes 1 or 2 uniformly at random.
+- As lector: `robar_carta` → uniformly random `prediccion_secreta` → after
+  `resultado_ronda`, sends `siguiente_turno` after `BOTS_RETRASO_SIGUIENTE_TURNO_MS`
+  (default 4000 ms) plus jitter — the human gets ~4–6.5 s to read the reveal before the
+  round auto-advances. UI must not assume the human drives every turn change.
+- Terminates cleanly on `partida_finalizada`, on its socket closing, or after
+  `BOTS_VIDA_MAXIMA_SEGUNDOS` (default 1800 s — abandoned practice rooms clean themselves
+  up; after that the bots just count as disconnected players).
 
 ---
 
@@ -358,8 +409,9 @@ On WS close (non-4003) or app resume:
 - **Tie (`empate`)**: possible with an even number of voters. `resultado_ronda.acierto` is always
   false; show "¡Empate! Nadie puntúa".
 - **Deck exhaustion**: `robar_carta` fails with `"No quedan preguntas disponibles"` once every
-  pregunta has been used in that sala (no repeats per sala). The UI should surface this and suggest
-  finishing the game (or adding preguntas).
+  pregunta has been used in that sala (no repeats per sala). Soft-deleted preguntas
+  (`eliminada = true`, see `DELETE /api/preguntas/{id}`) are excluded from the draw too.
+  The UI should surface this and suggest finishing the game (or adding preguntas).
 - **Duplicate join is safe**; duplicate vote is a 409 `error` event.
 - **`turno_actual` is a raw counter** (can exceed player count) — always use modulo to find the lector.
 - **`estado=finalizada` salas are dead**: you can still `GET` them, but no game actions work; you
@@ -408,10 +460,12 @@ server/app/
 ├── schemas/              # Pydantic request/response models (mirror §3)
 ├── routers/              # usuarios, preguntas, constantes, salas, puntos (thin handlers)
 ├── services/             # ALL game rules: salas.py, juego.py, preguntas.py, usuarios.py, marcador.py
-└── websocket/
-    ├── manager.py        # in-memory {codigo: {usuario_id: WebSocket}}
-    ├── router.py         # WS endpoint + event dispatch
-    └── eventos.py        # event names + payload builders (exact wire shapes)
+├── websocket/
+│   ├── manager.py        # in-memory {codigo: {usuario_id: WebSocket}}
+│   ├── router.py         # WS endpoint + event dispatch
+│   └── eventos.py        # event names + payload builders (exact wire shapes)
+└── bots/                 # Modo práctica (§5.6): fabrica.py (crea usuarios Bot-*),
+                          #   jugador.py (WS client loop), registro.py (task registry per sala)
 ```
 
 ## 10. Suggested frontend surface (minimum screens)

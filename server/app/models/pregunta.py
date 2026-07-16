@@ -9,6 +9,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -21,6 +22,13 @@ class Pregunta(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    enunciado: Mapped[str] = mapped_column(Text, nullable=False)
+    # Borrado suave: una pregunta ya jugada no puede borrarse físicamente porque
+    # rondas.pregunta_id la referencia (historial y rondas activas); se marca y se
+    # oculta del listado y del mazo en su lugar.
+    eliminada: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default=text("false")
     )
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

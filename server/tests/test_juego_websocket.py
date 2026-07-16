@@ -23,7 +23,10 @@ async def _drenar_jugador_unido(ws) -> None:
 
 async def test_ronda_completa_con_secreto(client: AsyncClient, app_prueba: FastAPI) -> None:
     ids = [await _crear_usuario(client, f"jugador{i}") for i in range(4)]
-    await client.post("/api/preguntas", json={"opcion_1": "Opción 1", "opcion_2": "Opción 2"})
+    await client.post(
+        "/api/preguntas",
+        json={"enunciado": "¿Qué prefieres?", "opcion_1": "Opción 1", "opcion_2": "Opción 2"},
+    )
     creada = await client.post("/api/salas", json={"usuario_id": ids[0]})
     codigo = creada.json()["codigo"]
     for uid in ids[1:]:
@@ -63,7 +66,13 @@ async def test_ronda_completa_con_secreto(client: AsyncClient, app_prueba: FastA
         for uid in ids:
             msg = await sockets[uid].receive_json()
             assert msg["evento"] == "carta_robada"
-            assert set(msg["datos"]["pregunta"].keys()) == {"id", "opcion_1", "opcion_2"}
+            assert set(msg["datos"]["pregunta"].keys()) == {
+                "id",
+                "enunciado",
+                "opcion_1",
+                "opcion_2",
+            }
+            assert msg["datos"]["pregunta"]["enunciado"] == "¿Qué prefieres?"
 
         await sockets[lector_id].send_json(
             {"evento": "prediccion_secreta", "datos": {"prediccion": "mayoria_1"}}

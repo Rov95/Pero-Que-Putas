@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import Boton from '../../componentes/Boton'
-import type { OpcionesPregunta } from '../../tipos/api'
+import type { CrearPreguntaBody } from '../../tipos/api'
 import type { Pregunta } from '../../tipos/modelos'
 import FormularioPregunta from './FormularioPregunta'
 
 interface Props {
   pregunta: Pregunta
-  onActualizar: (id: string, valores: OpcionesPregunta) => Promise<void>
+  onActualizar: (id: string, valores: CrearPreguntaBody) => Promise<void>
   onEliminar: (id: string) => Promise<void>
 }
 
@@ -19,7 +19,7 @@ export default function TarjetaPreguntaAdmin({ pregunta, onActualizar, onElimina
   if (editando) {
     return (
       <FormularioPregunta
-        valorInicial={{ opcion_1: opcion1, opcion_2: opcion2 }}
+        valorInicial={{ enunciado: pregunta.enunciado, opcion_1: opcion1, opcion_2: opcion2 }}
         textoBoton="Guardar cambios"
         onCancelar={() => setEditando(false)}
         onEnviar={async (valores) => {
@@ -32,6 +32,7 @@ export default function TarjetaPreguntaAdmin({ pregunta, onActualizar, onElimina
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/10 p-4">
+      <p className="text-sm font-medium text-white">{pregunta.enunciado}</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <p className="rounded-lg bg-opcion-1/10 px-3 py-2 text-sm text-white">{opcion1}</p>
         <p className="rounded-lg bg-opcion-2/10 px-3 py-2 text-sm text-white">{opcion2}</p>

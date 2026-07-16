@@ -35,7 +35,10 @@ async def _crear_usuario(client: AsyncClient, username: str) -> str:
 
 
 async def _crear_pregunta(client: AsyncClient, opcion_1: str, opcion_2: str) -> None:
-    await client.post("/api/preguntas", json={"opcion_1": opcion_1, "opcion_2": opcion_2})
+    await client.post(
+        "/api/preguntas",
+        json={"enunciado": "¿Qué prefieres?", "opcion_1": opcion_1, "opcion_2": opcion_2},
+    )
 
 
 async def _esperar_hasta(condicion: Callable[[], Awaitable[bool]], mensaje: str) -> None:

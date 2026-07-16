@@ -73,7 +73,11 @@ export default function VistaJuego() {
 
         {!ronda.desconocida && ronda.pregunta && (
           <div key={ronda.id} className="animate-aparecer">
-            <TarjetaDilema opcion1={ronda.pregunta.opcion_1} opcion2={ronda.pregunta.opcion_2} />
+            <TarjetaDilema
+              enunciado={ronda.pregunta.enunciado}
+              opcion1={ronda.pregunta.opcion_1}
+              opcion2={ronda.pregunta.opcion_2}
+            />
           </div>
         )}
 

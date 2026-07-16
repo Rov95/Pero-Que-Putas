@@ -17,7 +17,11 @@ test('partida completa de 3 jugadores: registro → sala → ronda → podio →
   // 1) La BD arranca sin preguntas: sembramos una o el juego no puede robar carta.
   const api = await request.newContext({ baseURL: API_URL })
   const semilla = await api.post('/api/preguntas', {
-    data: { opcion_1: 'Bailar toda la noche', opcion_2: 'Dormir todo el día' },
+    data: {
+      enunciado: '¿Qué prefieres este fin de semana?',
+      opcion_1: 'Bailar toda la noche',
+      opcion_2: 'Dormir todo el día',
+    },
   })
   expect(semilla.ok(), 'no se pudo sembrar la pregunta (¿backend caído?)').toBeTruthy()
 
@@ -66,7 +70,10 @@ test('partida completa de 3 jugadores: registro → sala → ronda → podio →
   const votantes = paginas.filter((pagina) => pagina !== lector)
 
   // 7) Ronda: robar carta → predecir "Todos eligen la Opción 1" → confirmar.
+  // La carta robada es aleatoria entre todas las preguntas de la BD, así que solo
+  // comprobamos que la carta muestra UN enunciado (no cuál).
   await lector!.getByRole('button', { name: 'Robar carta' }).click()
+  await expect(lector!.getByTestId('enunciado-carta')).not.toBeEmpty()
   await expect(lector!.getByText('¿Qué crees que votará el grupo?')).toBeVisible()
   await lector!.getByRole('button', { name: 'Todos eligen la Opción 1' }).click()
   await lector!.getByRole('button', { name: 'Confirmar predicción' }).click()

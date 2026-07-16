@@ -4,7 +4,7 @@ import { preguntasApi } from '../../api/preguntasApi'
 import Boton from '../../componentes/Boton'
 import EstadoVacio from '../../componentes/EstadoVacio'
 import PantallaCarga from '../../componentes/PantallaCarga'
-import { ErrorApi, type OpcionesPregunta } from '../../tipos/api'
+import { ErrorApi, type CrearPreguntaBody } from '../../tipos/api'
 import type { Pregunta } from '../../tipos/modelos'
 import { useEnfoqueAlMontar } from '../../utilidades/useEnfoqueAlMontar'
 import FormularioPregunta from './FormularioPregunta'
@@ -39,25 +39,15 @@ export default function PaginaPreguntas() {
     }
   }
 
-  async function crear(valores: OpcionesPregunta) {
+  async function crear(valores: CrearPreguntaBody) {
     const nueva = await preguntasApi.crear(valores)
     setPreguntas((previas) => [nueva, ...previas])
   }
 
-  async function actualizar(id: string, valores: OpcionesPregunta) {
-    await preguntasApi.actualizarOpciones(id, valores)
+  async function actualizar(id: string, valores: CrearPreguntaBody) {
+    const actualizada = await preguntasApi.actualizar(id, valores)
     setPreguntas((previas) =>
-      previas.map((pregunta) =>
-        pregunta.id === id
-          ? {
-              ...pregunta,
-              opciones: [
-                { numero: 1, texto: valores.opcion_1 },
-                { numero: 2, texto: valores.opcion_2 },
-              ],
-            }
-          : pregunta,
-      ),
+      previas.map((pregunta) => (pregunta.id === id ? actualizada : pregunta)),
     )
   }
 

@@ -100,7 +100,7 @@ describe('salaSlice — mapeo de eventos WS entrantes', () => {
   it('turnoActual actualiza turno_actual y resetea la ronda completa', () => {
     const store = crearStorePrueba()
     sembrarSala(store, salaDePrueba())
-    store.dispatch(salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', opcion_1: 'A', opcion_2: 'B' } }))
+    store.dispatch(salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', enunciado: '¿A o B?', opcion_1: 'A', opcion_2: 'B' } }))
     store.dispatch(salaActions.enviarVoto(1))
 
     store.dispatch(salaActions.turnoActual({ numero: 5, lector: { usuario_id: 'u2', username: 'beto' } }))
@@ -127,20 +127,20 @@ describe('salaSlice — mapeo de eventos WS entrantes', () => {
     store.dispatch(
       salaActions.cartaRobada({
         ronda_id: 'r1',
-        pregunta: { id: 'p1', opcion_1: 'Playa', opcion_2: 'Montaña' },
+        pregunta: { id: 'p1', enunciado: '¿Playa o montaña?', opcion_1: 'Playa', opcion_2: 'Montaña' },
       }),
     )
 
     const { ronda } = store.getState().sala
     expect(ronda.etapa).toBe('leyendo')
     expect(ronda.id).toBe('r1')
-    expect(ronda.pregunta).toEqual({ id: 'p1', opcion_1: 'Playa', opcion_2: 'Montaña' })
+    expect(ronda.pregunta).toEqual({ id: 'p1', enunciado: '¿Playa o montaña?', opcion_1: 'Playa', opcion_2: 'Montaña' })
   })
 
   it('prediccionRegistrada pasa a etapa votando', () => {
     const store = crearStorePrueba()
     sembrarSala(store, salaDePrueba())
-    store.dispatch(salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', opcion_1: 'A', opcion_2: 'B' } }))
+    store.dispatch(salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', enunciado: '¿A o B?', opcion_1: 'A', opcion_2: 'B' } }))
 
     store.dispatch(salaActions.prediccionRegistrada())
 
@@ -269,7 +269,7 @@ describe('salaSlice — mapeo de eventos WS entrantes', () => {
     const store = crearStorePrueba()
     sembrarSala(store, salaDePrueba({ estado: 'en_curso' }))
     store.dispatch(
-      salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', opcion_1: 'A', opcion_2: 'B' } }),
+      salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', enunciado: '¿A o B?', opcion_1: 'A', opcion_2: 'B' } }),
     )
 
     sembrarSala(store, salaDePrueba({ estado: 'en_curso' }))
@@ -283,7 +283,7 @@ describe('salaSlice — mapeo de eventos WS entrantes', () => {
     sembrarSala(store, salaDePrueba({ turno_actual: 0 }))
 
     store.dispatch(
-      salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', opcion_1: 'A', opcion_2: 'B' } }),
+      salaActions.cartaRobada({ ronda_id: 'r1', pregunta: { id: 'p1', enunciado: '¿A o B?', opcion_1: 'A', opcion_2: 'B' } }),
     )
     expect(store.getState().sala.ronda.etapa).toBe('leyendo')
 

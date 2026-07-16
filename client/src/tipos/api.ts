@@ -29,12 +29,15 @@ export interface FinalizarRespuesta {
   marcador_final: MarcadorFinalEntrada[]
 }
 
-export interface CrearPreguntaBody {
+export interface OpcionesPregunta {
   opcion_1: string
   opcion_2: string
 }
 
-export type OpcionesPregunta = CrearPreguntaBody
+/** Cuerpo de POST /api/preguntas y PUT /api/preguntas/{id}. */
+export interface CrearPreguntaBody extends OpcionesPregunta {
+  enunciado: string
+}
 
 export interface ActualizarPuntosBody {
   puntos: number

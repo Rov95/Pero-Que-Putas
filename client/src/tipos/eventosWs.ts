@@ -8,6 +8,7 @@ export interface SobreWs<E extends string, D> {
 /** Forma de la pregunta dentro de una ronda: distinta al modelo REST `Pregunta` (sin array `opciones`). */
 export interface PreguntaEnRonda {
   id: string
+  enunciado: string
   opcion_1: string
   opcion_2: string
 }

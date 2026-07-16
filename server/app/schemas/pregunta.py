@@ -22,12 +22,13 @@ class OpcionesLeer(BaseModel):
 
 
 class PreguntaCrear(OpcionesCrear):
-    pass
+    enunciado: str = Field(min_length=1)
 
 
 class PreguntaLeer(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    enunciado: str
     creado_en: datetime
     opciones: list[OpcionLeer]

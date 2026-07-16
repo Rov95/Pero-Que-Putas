@@ -3,7 +3,7 @@
 > **Purpose of this file:** complete, verified map of the frontend at
 > `~/Desktop/Portfolio/Pero-Que-Putas/client` so a Claude agent can work on it **without
 > re-reading the whole project**. Mirrors the implemented code on branch `main` as of
-> 2026-07-15. When in doubt, the code is the source of truth.
+> 2026-07-16. When in doubt, the code is the source of truth.
 >
 > Companion docs (same folder): [`backend-api.md`](backend-api.md) — the REST/WS contract the
 > frontend consumes; [`app-overview.md`](app-overview.md) — whole-app map.
@@ -13,7 +13,8 @@
 ## 1. What it is
 
 Mobile-first Spanish-language web client for the party game "Pero Qué Putas"
-(would-you-rather with secret predictions; game rules in `app-overview.md` §1). Players
+(question cards — an `enunciado` plus 2 options — with secret predictions; game rules in
+`app-overview.md` §1). Players
 register a username, create/join a **sala** by 6-char code, and play rounds in real time
 over a WebSocket. **All UI text AND all code identifiers are in Spanish** — components,
 slices, actions, variables (`robarCarta`, `soyLector`, `anfitrion`). Keep new code in the
@@ -56,7 +57,7 @@ tipos/
   eventosWs.ts              # WS envelopes, discriminated unions EventoCliente/EventoServidor
   api.ts                    # request bodies, ErrorApi, detalleDeError()
 paginas/
-  inicio/                   # PaginaInicio + FormularioRegistro/FormularioUnirse/BotonCrearSala
+  inicio/                   # PaginaInicio + FormularioRegistro/FormularioUnirse/BotonCrearSala/BotonPractica
   sala/                     # PaginaSala + VistaLobby/VistaJuego/VistaPodio + useConexionSala
   sala/juego/               # PanelLector, PanelVotante, PanelResultado, PanelRondaDesconocida,
                             #   SelectorPrediccion, ProgresoVotos, MarcadorLateral
@@ -69,14 +70,15 @@ estilos/index.css           # Tailwind v4 @theme tokens + keyframes (aparecer, r
 tests/                      # Vitest: salaSlice, seleccionadores/juego, wsMiddleware
 ```
 
-E2E lives outside src: `client/e2e/juego-completo.spec.ts` (3 browser contexts play a full
-game; excluded from Vitest via `vite.config.ts`).
+E2E lives outside src (excluded from Vitest via `vite.config.ts`):
+`client/e2e/juego-completo.spec.ts` (3 browser contexts play a full game) and
+`client/e2e/practica.spec.ts` (Modo práctica: 1 browser + 2 server bots to the podium).
 
 ## 4. Routes & screens
 
 | Route | Component | What it does |
 |---|---|---|
-| `/` | `PaginaInicio` | Registro (if no session) OR: greeting, "Volver a la sala X" banner, Crear sala, Unirse por código, links to `/marcador` and `/preguntas` |
+| `/` | `PaginaInicio` | Registro (if no session) OR: greeting, "Volver a la sala X" banner, Crear sala, Modo práctica, Unirse por código, links to `/marcador` and `/preguntas` |
 | `/sala/:codigo` | `PaginaSala` | The room. Renders by `sala.estado`: `esperando`→`VistaLobby`, `en_curso`→`VistaJuego`, `finalizada`→`VistaPodio` |
 | `/marcador` | `PaginaMarcador` | All-time scoreboard table (highlights own username) |
 | `/preguntas` | `PaginaPreguntas` | Card deck CRUD (create/edit/delete, paginated 20/page "Cargar más") |
@@ -91,7 +93,11 @@ game; excluded from Vitest via `vite.config.ts`).
   localStorage has `pqp_sala_codigo` AND `GET /api/salas/{codigo}` says the sala is not
   `finalizada` (on 404 the stored code is deleted). Join form normalizes input
   (`normalizarCodigoSala`: uppercase, strip non-alphanumerics) and disables submit until
-  the code is 6 valid-alphabet chars.
+  the code is 6 valid-alphabet chars. **"Modo práctica"** (`BotonPractica`, next to Crear
+  sala) dispatches `crearPractica` and navigates to `/sala/{codigo}` on success — the
+  backend creates the sala with 2 bots already joined (backend-api.md §4.5/§5.6), so the
+  lobby fills to "3 conectados" by itself; REST errors (notably the 409 for an empty deck)
+  surface as toasts.
 - **PaginaSala** — redirects to `/` when there's no session; shows a status banner whenever
   `conexion !== 'conectado'` (Conectando… / Reconectando… / Sin conexión). Calls
   `useConexionSala(codigo)` (§7) which owns join+connect+cleanup.
@@ -107,9 +113,11 @@ game; excluded from Vitest via `vite.config.ts`).
   `marcadorFinal` is null (e.g. arrived after reload) shows "Esta partida ya terminó" with
   the same exits. "Volver al inicio" dispatches `limpiarSala` + `limpiarMarcadorFinal` and
   removes `pqp_sala_codigo`.
-- **PaginaPreguntas** — plain local state (no Redux). Create prepends; edit replaces both
-  option texts via `PUT /opciones`; delete removes. "Hay más" heuristic: last page was full
-  (`pagina.length === 20`).
+- **PaginaPreguntas** — plain local state (no Redux). Cards are enunciado + 2 options
+  (`FormularioPregunta` has three textareas: Pregunta, Opción 1, Opción 2). Create
+  prepends; edit does a full-card update via `PUT /api/preguntas/{id}` and replaces the
+  local row with the server response; delete removes. "Hay más" heuristic: last page was
+  full (`pagina.length === 20`).
 
 ## 5. Redux store (5 slices)
 
@@ -140,7 +148,8 @@ State:
   }
 }
 ```
-REST thunks: `crearSala`, `unirseSala(codigo)`, `sincronizarSala(codigo)` (the resync/
+REST thunks: `crearSala`, `crearPractica` (→ `POST /api/salas/practica`; same
+pending/fulfilled/rejected handling as `crearSala`), `unirseSala(codigo)`, `sincronizarSala(codigo)` (the resync/
 reconnection fetch — sets `ronda.desconocida=true` when sala is `en_curso` and no local
 etapa), `iniciarPartida`, `finalizarPartida`.
 
@@ -229,7 +238,7 @@ never from local assumptions:
 | ronda state | Lector sees (`PanelLector`) | Others see (`PanelVotante`) |
 |---|---|---|
 | `etapa=null` (no round) | "Robar carta" button; if errorJuego is deck-exhausted, hint linking `/preguntas` | "El lector está leyendo la carta…" |
-| `leyendo` (after `carta_robada`) | `SelectorPrediccion` — 4 buttons from constantes + confirm | same waiting text (card visible to all via `TarjetaDilema`) |
+| `leyendo` (after `carta_robada`) | `SelectorPrediccion` — 4 buttons from constantes + confirm | same waiting text (card — enunciado above the two options — visible to all via `TarjetaDilema`; the enunciado `<p>` carries `data-testid="enunciado-carta"` for the E2E) |
 | `votando` (after `prediccion_registrada`) | "Predicción guardada. Esperando los votos…" | Two big buttons **1 ☝️ / 2 ✌️** → `enviarVoto`; after `miVoto`: "Voto registrado ✓". `ProgresoVotos` bar (n/m) shows for everyone |
 | `resuelta` (after `resultado_ronda`) | `PanelResultado` for everyone: result label, every vote colored by option, lector's prediction (etiqueta from constantes), ✅ +1 / ❌ falló, and a "Siguiente turno" button **only for lector or anfitrión** | idem |
 | `desconocida=true` (reconnected mid-round) | `PanelRondaDesconocida`: "Hay una ronda en curso…" + speculative recovery actions — "Robar carta" (lector) / "Forzar siguiente turno" (anfitrión). If they don't apply, the backend rejects with an `error` toast, harmless | idem |
@@ -246,10 +255,13 @@ returns the Spanish detalle for `ErrorApi` and **re-throws anything else** (real
 surface instead of becoming toasts).
 
 Endpoint coverage (full contract in backend-api.md §4): `usuariosApi` (crear, obtener),
-`salasApi` (crear, unirse, obtener, iniciar, finalizar, obtenerPuntos, actualizarPuntos,
-borrarPuntos — the puntos ones exist but no UI uses them yet), `preguntasApi` (listar
-paginated, crear, obtener, obtenerOpciones, actualizarOpciones, eliminar), `marcadorApi`
-(obtenerHistorico), `constantesApi` (obtenerPredicciones).
+`salasApi` (crear, crearPractica, unirse, obtener, iniciar, finalizar, obtenerPuntos,
+actualizarPuntos, borrarPuntos — the puntos ones exist but no UI uses them yet), `preguntasApi` (listar
+paginated, crear, obtener, actualizar — full-card PUT used by the edit flow —,
+obtenerOpciones, actualizarOpciones — both options-only, no UI uses them —, eliminar —
+always 204: the server hard-deletes never-played cards and soft-deletes played ones,
+transparent to the client),
+`marcadorApi` (obtenerHistorico), `constantesApi` (obtenerPredicciones).
 
 ## 10. Persistence (localStorage, all wrapped in try/catch — private mode safe)
 
@@ -279,6 +291,15 @@ containers on navigation/view change. Touch targets ≥ `min-h-11`.
 - `e2e/juego-completo.spec.ts`: 3 browser contexts, full game incl. mid-game reload
   resync, ties, podium, marcador. Needs backend on :8000 (use `scripts/e2e.sh` from repo
   root for the all-in-one run; Playwright starts Vite itself, `reuseExistingServer: true`).
+  Gotcha: `robar_carta` draws a **random** pregunta from the whole DB (which persists
+  across runs), so the spec never asserts the seeded card's text — it checks the card
+  shows *some* enunciado via `getByTestId('enunciado-carta')`.
+- `e2e/practica.spec.ts`: Modo práctica — 1 browser + the 2 server bots, up to 3 rounds
+  until the human has been lector once (guaranteed by the modulo rotation), then podium
+  with 3 rows. It branches on the **visible UI** (Robar carta vs. "El lector está
+  leyendo…") instead of assuming roles; gotcha baked into it: Playwright's `isVisible()`
+  does not retry, so it first `Promise.race`s the two panels' `waitFor` before checking
+  which one won (the round header renders a React commit before the role panel).
 
 ## 13. Known limitations / gotchas (do not "rediscover" these)
 
@@ -296,7 +317,11 @@ containers on navigation/view change. Touch targets ≥ `min-h-11`.
 
 ## 14. Pending work
 
-**Modo práctica** (single human + 2 random bots, "Modo práctica" button on inicio) is
-planned but **not implemented** — full plan with strict phase gates at
-[`../plans/pero-que-putas-practica.md`](../plans/pero-que-putas-practica.md). Execute one
-phase per user request, then stop.
+None planned. **Modo práctica** (single human + 2 server bots) was implemented 2026-07-15
+(all 5 phases of [`../plans/pero-que-putas-practica.md`](../plans/pero-que-putas-practica.md)):
+`BotonPractica` on inicio → `crearPractica` thunk → `POST /api/salas/practica`. From the
+lobby on, the client treats bots exactly like human players — there is **no bot-specific
+frontend code** beyond the button/thunk, by design (see backend-api.md §5.6). One behavior
+to keep in mind when touching VistaJuego: when a bot is lector, `siguiente_turno` fires
+from the server ~4–6.5 s after the reveal, so turn changes can arrive without any local
+user action.

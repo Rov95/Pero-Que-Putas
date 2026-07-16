@@ -21,6 +21,7 @@ export interface Opcion {
 
 export interface Pregunta {
   id: string
+  enunciado: string
   creado_en: string
   opciones: Opcion[]
 }

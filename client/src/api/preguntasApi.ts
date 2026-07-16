@@ -7,6 +7,8 @@ export const preguntasApi = {
     clienteHttp.get<Pregunta[]>('/api/preguntas', params as Record<string, number | undefined>),
   crear: (body: CrearPreguntaBody) => clienteHttp.post<Pregunta>('/api/preguntas', body),
   obtener: (id: string) => clienteHttp.get<Pregunta>(`/api/preguntas/${id}`),
+  actualizar: (id: string, body: CrearPreguntaBody) =>
+    clienteHttp.put<Pregunta>(`/api/preguntas/${id}`, body),
   obtenerOpciones: (id: string) =>
     clienteHttp.get<OpcionesPregunta>(`/api/preguntas/${id}/opciones`),
   actualizarOpciones: (id: string, body: OpcionesPregunta) =>

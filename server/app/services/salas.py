@@ -68,7 +68,9 @@ async def crear_sala_practica(
 ) -> tuple[Sala, list[Usuario]]:
     await _obtener_usuario_o_404(sesion, usuario_id)
 
-    hay_pregunta = await sesion.scalar(select(Pregunta.id).limit(1))
+    hay_pregunta = await sesion.scalar(
+        select(Pregunta.id).where(Pregunta.eliminada.is_(False)).limit(1)
+    )
     if hay_pregunta is None:
         raise ErrorAplicacion(
             "No hay preguntas disponibles. Crea algunas en la pantalla de preguntas "

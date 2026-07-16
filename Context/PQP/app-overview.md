@@ -10,9 +10,10 @@
 > - [`frontend.md`](frontend.md) — the React client: screens, Redux slices, WS middleware,
 >   conventions, known gotchas.
 >
-> Verified against the code on branch `main` as of 2026-07-15. Status: backend (10 phases)
-> and frontend (5 phases) fully implemented and verified end-to-end; ~61 pytest + 27 vitest
-> tests and a 3-browser Playwright E2E, all green.
+> Verified against the code on branch `main` as of 2026-07-16. Status: backend (10 phases),
+> frontend (5 phases) and Modo práctica (5 phases) fully implemented and verified
+> end-to-end; 77 pytest + 30 vitest tests and two full-game Playwright E2Es (3 humans /
+> 1 human + 2 bots), all green.
 
 ---
 
@@ -26,9 +27,10 @@ Spanish.
 2. They gather in a **sala** (room) via a 6-char **codigo** (alphabet without 0/O/1/I/L).
    The creator is the **anfitrión** (host).
 3. Host starts the game → players get a shuffled **orden_turno**. Each round one player is
-   the **lector**: draws a **pregunta** (card with two absurd options), makes a **secret
-   prediction** of the group vote (`mayoria_1 | todos_1 | mayoria_2 | todos_2`), then
-   everyone else votes 1 or 2.
+   the **lector**: draws a **pregunta** (card = an **enunciado**, the question text, plus
+   its two unique options — e.g. "Si mañana acaba el mundo, ¿qué harías?" → opción 1 /
+   opción 2), makes a **secret prediction** of the group vote
+   (`mayoria_1 | todos_1 | mayoria_2 | todos_2`), then everyone else votes 1 or 2.
 4. The round auto-resolves when the last expected vote arrives (only *connected*
    non-lector players are expected). Result: `todos_X` / `mayoria_X` / `empate`.
    Prediction matching is **strict** (`mayoria_1` ≠ `todos_1`); a hit gives the lector
@@ -67,6 +69,10 @@ play a round until someone creates cards at `/preguntas`.
   sala gone).
 - **Secrecy invariants**: individual votes and the lector's prediction are never
   observable (REST or WS) before the `resultado_ronda` reveal.
+- **Bots (Modo práctica)**: `POST /api/salas/practica` creates a sala with the caller as
+  anfitrión plus 2 bot users, each driven by an **in-process WebSocket client task inside
+  the backend** (`server/app/bots/`) — they speak the exact same REST/WS contract as
+  humans, so the frontend never special-cases them. Details: `backend-api.md` §4.5/§5.6.
 
 ## 3. Repo layout (monorepo)
 
@@ -78,7 +84,7 @@ Pero-Que-Putas/
 ├── scripts/
 │   ├── db.py                # local Postgres WITHOUT Docker via pgserver (start|url|stop|status)
 │   ├── dev.sh               # one command: db + migrations + backend :8000 + frontend :5173
-│   └── e2e.sh               # full-stack E2E: db + backend + Playwright (3 browsers), then teardown
+│   └── e2e.sh               # full-stack E2E: db + backend + Playwright (both specs), then teardown
 ├── server/                  # FastAPI backend  → details: Context/PQP/backend-api.md, server/README.md
 │   ├── app/
 │   │   ├── main.py          # create_app(), routers, exception handlers
@@ -90,14 +96,15 @@ Pero-Que-Putas/
 │   │   ├── schemas/         # Pydantic v2 request/response
 │   │   ├── routers/         # thin: usuarios, preguntas, constantes, salas, puntos
 │   │   ├── services/        # ALL game rules: salas.py, juego.py, preguntas.py, usuarios.py, marcador.py
-│   │   └── websocket/       # manager.py (in-memory sockets per sala), router.py (dispatch), eventos.py
+│   │   ├── websocket/       # manager.py (in-memory sockets per sala), router.py (dispatch), eventos.py
+│   │   └── bots/            # Modo práctica: fabrica.py (usuarios Bot-*), jugador.py (WS client loop), registro.py (task registry)
 │   ├── alembic/             # migrations (single initial schema revision)
-│   ├── tests/               # pytest ×12 files (~61 tests) — spin up real Postgres via pgserver
+│   ├── tests/               # pytest (77 tests, incl. bots runtime + práctica) — real Postgres via pgserver
 │   ├── docker-compose.yml   # optional Postgres 16 for those with Docker
 │   └── pyproject.toml       # uv-managed, Python 3.12
 ├── client/                  # React frontend  → details: Context/PQP/frontend.md, client/README.md
 │   ├── src/                 # (see frontend.md §3 for the full map)
-│   ├── e2e/juego-completo.spec.ts   # Playwright: 3 browsers play a whole game
+│   ├── e2e/                 # Playwright: juego-completo.spec.ts (3 browsers) + practica.spec.ts (1 humano + 2 bots)
 │   └── package.json         # Vite 8, React 19, RTK 2, Tailwind 4, Vitest, Playwright
 └── README.md                # user-facing quickstart (Spanish)
 ```
@@ -113,7 +120,10 @@ Pero-Que-Putas/
 ## 5. Data model (5 core tables + join/detail tables)
 
 - `usuarios` — id (UUID), username (unique, case-insensitive), creado_en.
-- `preguntas` + `opciones` — a card and its exactly-2 options (cascade delete).
+- `preguntas` + `opciones` — a card (`enunciado` = the question text, NOT NULL) and its
+  exactly-2 options (cascade delete). `eliminada` (bool) marks soft-deleted cards:
+  a played card can't be hard-deleted (`rondas.pregunta_id` references it), so DELETE
+  tombstones it instead — hidden from the list and never drawn again.
 - `salas` + `sala_jugadores` — room (codigo, estado `esperando|en_curso|finalizada`,
   anfitrion_id, `turno_actual` raw counter) and membership (orden_turno, puntos,
   conectado). **Lector = jugador whose `orden_turno == turno_actual % n_jugadores`** —
@@ -128,8 +138,11 @@ Pero-Que-Putas/
 (Exact payloads, status codes, and error strings: `backend-api.md` §4–§5.)
 
 **REST**: `POST /api/usuarios` · `GET /api/usuarios/{id}` · preguntas CRUD
-(`GET/POST /api/preguntas`, `GET/PUT …/{id}/opciones`, `DELETE …/{id}`) ·
-`GET /api/constantes/predicciones` · `POST /api/salas` · `POST /api/salas/{codigo}/unirse`
+(`GET/POST /api/preguntas` — body `{enunciado, opcion_1, opcion_2}` —,
+`PUT …/{id}` full-card update, `GET/PUT …/{id}/opciones`, `DELETE …/{id}` — hard if
+never played, soft otherwise) ·
+`GET /api/constantes/predicciones` · `POST /api/salas` · `POST /api/salas/practica`
+(sala + 2 bots, 409 if zero preguntas) · `POST /api/salas/{codigo}/unirse`
 (idempotent) · `GET /api/salas/{codigo}` (resync snapshot) ·
 `POST /api/salas/{codigo}/iniciar` (host) · `POST /api/salas/{codigo}/finalizar` (host;
 atomic: historic rows + reset + estado) · puntos utilities
@@ -170,7 +183,8 @@ the pgserver path (`scripts/db.py`), never `docker compose`.
 # Everything at once (Postgres via pgserver + migrations + backend + frontend):
 ./scripts/dev.sh                     # then open http://localhost:5173 (Swagger at :8000/docs)
 
-# Full-stack E2E (starts and tears down its own stack; uses system Chrome):
+# Full-stack E2E (starts and tears down its own stack; uses system Chrome;
+# runs BOTH full games: 3 humans + modo práctica):
 ./scripts/e2e.sh
 
 # Piecemeal:
@@ -179,14 +193,15 @@ cd server && uv run alembic upgrade head && uv run uvicorn app.main:app --reload
 cd client && npm install && npm run dev
 
 # Tests:
-cd server && uv run pytest           # backend (~61 tests; own pgserver, no Docker needed)
-cd client && npm test                # frontend unit (Vitest, ~27 tests)
+cd server && uv run pytest           # backend (72 tests; own pgserver, no Docker needed)
+cd client && npm test                # frontend unit (Vitest, 30 tests)
 cd client && npm run test:e2e        # browser E2E only (needs backend already running)
 ```
 
 First run of a fresh DB: create 3–5 preguntas at `http://localhost:5173/preguntas`, then
 register users in separate incognito windows (localStorage = identity), create/join a
-sala, start with ≥2 players.
+sala, start with ≥2 players — or press **"Modo práctica"** on the home screen to play solo
+against 2 bots.
 
 ## 9. Conventions for agents working on this repo
 
@@ -205,8 +220,25 @@ sala, start with ≥2 players.
 
 - **Done** (2026-07-07): all 10 backend phases, all 5 frontend phases, verified live
   end-to-end (bugs found in verification were fixed; leftovers are §7).
-- **Pending — Modo práctica**: 1 human + 2 random bots ("Modo práctica" button on the home
-  screen) so the game is testable solo. Detailed plan with strict phase gates:
-  [`../plans/pero-que-putas-practica.md`](../plans/pero-que-putas-practica.md). Rule: the
-  executing agent implements **one phase per user request and stops** at its verification
-  gate; zero changes to existing game-loop services.
+- **Done — Modo práctica** (2026-07-15, all 5 phases of
+  [`../plans/pero-que-putas-practica.md`](../plans/pero-que-putas-practica.md)): 1 human +
+  2 random bots via the "Modo práctica" home-screen button → `POST /api/salas/practica`.
+  Bots are real in-process WS clients (`server/app/bots/`) with jittered human-like delays
+  (env vars `BOTS_RETRASO_MIN_MS`/`BOTS_RETRASO_MAX_MS`/`BOTS_RETRASO_SIGUIENTE_TURNO_MS`/
+  `BOTS_VIDA_MAXIMA_SEGUNDOS`, see `server/README.md`); they predict/vote uniformly at
+  random, auto-advance the turn when lector (~4–6.5 s after the reveal), and get written
+  to the marcador histórico like any player (accepted trade-off). Zero changes were made
+  to the existing game-loop services (`juego.py` only gained an idempotency guard on round
+  resolution, agreed during Fase 3). Dedicated E2E: `client/e2e/practica.spec.ts`.
+- **Done — enunciado** (2026-07-16): preguntas gained a required `enunciado` (question
+  text) so a card is 1 question + its 2 options (before it was options-only,
+  would-you-rather style). Flows DB → REST → WS `carta_robada` → UI (admin CRUD +
+  in-game card); new `PUT /api/preguntas/{id}` full-card update (the frontend edit flow
+  uses it; the `/opciones` sub-resource endpoints remain, UI-unused). Alembic revision
+  `b3d1c07a52e4` backfills pre-existing rows with "¿Qué prefieres?".
+- **Done — borrado de preguntas jugadas** (2026-07-16): `DELETE /api/preguntas/{id}`
+  used to 409 (FK conflict) on any card that had ever been drawn in a ronda. Now it
+  soft-deletes those (`preguntas.eliminada`, Alembic revision `c7e4a91f30d8`): still
+  `204`, hidden from list/GET/PUT and from `robar_carta`'s draw, round history intact.
+  Never-played cards are still hard-deleted.
+- **Pending**: nothing planned; the open items are the limitations in §7.

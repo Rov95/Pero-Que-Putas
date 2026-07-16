@@ -30,7 +30,9 @@ async def listar_preguntas(
 async def crear_pregunta(
     datos: PreguntaCrear, sesion: AsyncSession = Depends(obtener_sesion)
 ) -> PreguntaLeer:
-    pregunta = await servicio_preguntas.crear_pregunta(sesion, datos.opcion_1, datos.opcion_2)
+    pregunta = await servicio_preguntas.crear_pregunta(
+        sesion, datos.enunciado, datos.opcion_1, datos.opcion_2
+    )
     return PreguntaLeer.model_validate(pregunta)
 
 
@@ -39,6 +41,18 @@ async def obtener_pregunta(
     pregunta_id: uuid.UUID, sesion: AsyncSession = Depends(obtener_sesion)
 ) -> PreguntaLeer:
     pregunta = await servicio_preguntas.obtener_pregunta(sesion, pregunta_id)
+    return PreguntaLeer.model_validate(pregunta)
+
+
+@router.put("/{pregunta_id}", response_model=PreguntaLeer)
+async def actualizar_pregunta(
+    pregunta_id: uuid.UUID,
+    datos: PreguntaCrear,
+    sesion: AsyncSession = Depends(obtener_sesion),
+) -> PreguntaLeer:
+    pregunta = await servicio_preguntas.actualizar_pregunta(
+        sesion, pregunta_id, datos.enunciado, datos.opcion_1, datos.opcion_2
+    )
     return PreguntaLeer.model_validate(pregunta)
 
 

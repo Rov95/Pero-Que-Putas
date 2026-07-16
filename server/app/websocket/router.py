@@ -42,7 +42,12 @@ def _jugador_payload(jugador: SalaJugador) -> dict[str, Any]:
 
 def _pregunta_payload(pregunta) -> dict[str, Any]:
     por_numero = {opcion.numero: opcion.texto for opcion in pregunta.opciones}
-    return {"id": str(pregunta.id), "opcion_1": por_numero[1], "opcion_2": por_numero[2]}
+    return {
+        "id": str(pregunta.id),
+        "enunciado": pregunta.enunciado,
+        "opcion_1": por_numero[1],
+        "opcion_2": por_numero[2],
+    }
 
 
 async def _despachar(

@@ -10,7 +10,11 @@ test('modo práctica: 1 humano + 2 bots hasta el podio', async ({ browser }) => 
   const api = await request.newContext({ baseURL: API_URL })
   for (let i = 0; i < 3; i++) {
     const semilla = await api.post('/api/preguntas', {
-      data: { opcion_1: `Playa ${i}`, opcion_2: `Montaña ${i}` },
+      data: {
+        enunciado: `¿Playa o montaña? (${i})`,
+        opcion_1: `Playa ${i}`,
+        opcion_2: `Montaña ${i}`,
+      },
     })
     expect(semilla.ok(), 'no se pudo sembrar la pregunta (¿backend caído?)').toBeTruthy()
   }

@@ -25,7 +25,14 @@ async def test_partida_completa_de_3_jugadores_hasta_marcador(
     client: AsyncClient, app_prueba: FastAPI
 ) -> None:
     ids = [await _crear_usuario(client, f"e2e{i}") for i in range(3)]
-    await client.post("/api/preguntas", json={"opcion_1": "Bailar toda la noche", "opcion_2": "Dormir todo el día"})
+    await client.post(
+        "/api/preguntas",
+        json={
+            "enunciado": "¿Qué prefieres este fin de semana?",
+            "opcion_1": "Bailar toda la noche",
+            "opcion_2": "Dormir todo el día",
+        },
+    )
 
     creada = await client.post("/api/salas", json={"usuario_id": ids[0]})
     codigo = creada.json()["codigo"]

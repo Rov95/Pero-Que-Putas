@@ -60,7 +60,7 @@ the frontend's card-creation screen), e.g.:
 ```bash
 curl -X POST http://localhost:8000/api/preguntas \
   -H "Content-Type: application/json" \
-  -d '{"opcion_1": "Tener que cantar antes de cada comida", "opcion_2": "Tener que bailar antes de cada comida"}'
+  -d '{"enunciado": "¿Qué prefieres por el resto de tu vida?", "opcion_1": "Tener que cantar antes de cada comida", "opcion_2": "Tener que bailar antes de cada comida"}'
 ```
 
 ## Running the tests

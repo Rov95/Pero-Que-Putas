@@ -15,7 +15,7 @@ from app.manejadores import (
     manejar_error_integridad,
     manejar_error_validacion,
 )
-from app.routers import constantes, preguntas, puntos, salas, usuarios
+from app.routers import constantes, preguntas, puntos, salas, sesiones, usuarios
 from app.websocket.router import router as websocket_router
 
 api_router = APIRouter(prefix="/api")
@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
     app.include_router(usuarios.router)
+    app.include_router(sesiones.router)
     app.include_router(preguntas.router)
     app.include_router(constantes.router)
     app.include_router(salas.router)

@@ -7,26 +7,6 @@ from app.constants import EstadoSalaEnum
 from app.schemas.puntos import MarcadorFinalEntrada
 
 
-class SalaCrear(BaseModel):
-    usuario_id: uuid.UUID
-
-
-class UnirseSala(BaseModel):
-    usuario_id: uuid.UUID
-
-
-class IniciarSala(BaseModel):
-    usuario_id: uuid.UUID
-
-
-class FinalizarSala(BaseModel):
-    usuario_id: uuid.UUID
-
-
-class PracticaCrear(BaseModel):
-    usuario_id: uuid.UUID
-
-
 class JugadorLeer(BaseModel):
     usuario_id: uuid.UUID
     username: str

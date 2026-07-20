@@ -1,10 +1,19 @@
 import { ErrorApi, type ErrorRespuesta } from '../tipos/api'
+import { almacenamiento } from '../utilidades/almacenamiento'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
-export function urlWsSala(codigo: string, usuarioId: string): string {
+export function urlWsSala(codigo: string, token: string): string {
   const wsBase = BASE_URL.replace(/^http/, 'ws')
-  return `${wsBase}/ws/salas/${codigo}?usuario_id=${encodeURIComponent(usuarioId)}`
+  return `${wsBase}/ws/salas/${codigo}?token=${encodeURIComponent(token)}`
+}
+
+// Invocado ante cualquier respuesta 401 (sesión revocada/expirada) antes de lanzar
+// el error; el store lo registra para limpiar la sesión local automáticamente.
+let manejador401: (() => void) | null = null
+
+export function establecerManejador401(manejador: () => void): void {
+  manejador401 = manejador
 }
 
 interface OpcionesPeticion {
@@ -23,6 +32,14 @@ function construirUrl(ruta: string, params?: OpcionesPeticion['params']): string
   return url.toString()
 }
 
+function construirCabeceras(body: unknown): Record<string, string> | undefined {
+  const cabeceras: Record<string, string> = {}
+  if (body !== undefined) cabeceras['Content-Type'] = 'application/json'
+  const token = almacenamiento.obtenerToken()
+  if (token) cabeceras['Authorization'] = `Bearer ${token}`
+  return Object.keys(cabeceras).length > 0 ? cabeceras : undefined
+}
+
 async function peticion<T>(ruta: string, opciones: OpcionesPeticion = {}): Promise<T> {
   const { method = 'GET', body, params } = opciones
 
@@ -30,7 +47,7 @@ async function peticion<T>(ruta: string, opciones: OpcionesPeticion = {}): Promi
   try {
     respuesta = await fetch(construirUrl(ruta, params), {
       method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: construirCabeceras(body),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch {
@@ -45,6 +62,7 @@ async function peticion<T>(ruta: string, opciones: OpcionesPeticion = {}): Promi
     } catch {
       // sin body JSON: se mantiene el mensaje por defecto
     }
+    if (respuesta.status === 401) manejador401?.()
     throw new ErrorApi(detalle, respuesta.status)
   }
 

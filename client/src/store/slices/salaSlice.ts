@@ -71,10 +71,9 @@ export function calcularLector(sala: Pick<Sala, 'jugadores' | 'turno_actual'>): 
 export const crearSala = createAsyncThunk<Sala, void, { state: RootState; rejectValue: string }>(
   'sala/crearSala',
   async (_, { getState, rejectWithValue }) => {
-    const usuarioId = getState().sesion.usuario?.id
-    if (!usuarioId) return rejectWithValue('Debes iniciar sesión primero')
+    if (!getState().sesion.usuario) return rejectWithValue('Debes iniciar sesión primero')
     try {
-      return await salasApi.crear({ usuario_id: usuarioId })
+      return await salasApi.crear()
     } catch (error) {
       return rejectWithValue(detalleDeError(error))
     }
@@ -86,10 +85,9 @@ export const crearPractica = createAsyncThunk<
   void,
   { state: RootState; rejectValue: string }
 >('sala/crearPractica', async (_, { getState, rejectWithValue }) => {
-  const usuarioId = getState().sesion.usuario?.id
-  if (!usuarioId) return rejectWithValue('Debes iniciar sesión primero')
+  if (!getState().sesion.usuario) return rejectWithValue('Debes iniciar sesión primero')
   try {
-    return await salasApi.crearPractica({ usuario_id: usuarioId })
+    return await salasApi.crearPractica()
   } catch (error) {
     return rejectWithValue(detalleDeError(error))
   }
@@ -100,10 +98,9 @@ export const unirseSala = createAsyncThunk<
   string,
   { state: RootState; rejectValue: string }
 >('sala/unirseSala', async (codigo, { getState, rejectWithValue }) => {
-  const usuarioId = getState().sesion.usuario?.id
-  if (!usuarioId) return rejectWithValue('Debes iniciar sesión primero')
+  if (!getState().sesion.usuario) return rejectWithValue('Debes iniciar sesión primero')
   try {
-    return await salasApi.unirse(codigo, { usuario_id: usuarioId })
+    return await salasApi.unirse(codigo)
   } catch (error) {
     return rejectWithValue(detalleDeError(error))
   }
@@ -126,11 +123,10 @@ export const iniciarPartida = createAsyncThunk<
   { state: RootState; rejectValue: string }
 >('sala/iniciarPartida', async (_, { getState, rejectWithValue }) => {
   const estado = getState()
-  const usuarioId = estado.sesion.usuario?.id
   const codigo = estado.sala.sala?.codigo
-  if (!usuarioId || !codigo) return rejectWithValue('No hay sala activa')
+  if (!estado.sesion.usuario || !codigo) return rejectWithValue('No hay sala activa')
   try {
-    return await salasApi.iniciar(codigo, { usuario_id: usuarioId })
+    return await salasApi.iniciar(codigo)
   } catch (error) {
     return rejectWithValue(detalleDeError(error))
   }
@@ -142,11 +138,10 @@ export const finalizarPartida = createAsyncThunk<
   { state: RootState; rejectValue: string }
 >('sala/finalizarPartida', async (_, { getState, rejectWithValue }) => {
   const estado = getState()
-  const usuarioId = estado.sesion.usuario?.id
   const codigo = estado.sala.sala?.codigo
-  if (!usuarioId || !codigo) return rejectWithValue('No hay sala activa')
+  if (!estado.sesion.usuario || !codigo) return rejectWithValue('No hay sala activa')
   try {
-    return await salasApi.finalizar(codigo, { usuario_id: usuarioId })
+    return await salasApi.finalizar(codigo)
   } catch (error) {
     return rejectWithValue(detalleDeError(error))
   }

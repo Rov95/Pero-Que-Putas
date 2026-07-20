@@ -3,8 +3,8 @@
 > **Purpose of this file:** complete, verified map of the backend (REST + WebSocket) for a Claude
 > agent building the frontend. Everything here was extracted from the implemented code at
 > `~/Desktop/Portfolio/Pero-Que-Putas/server` (branch `main`, all 10 plan phases + Modo práctica
-> done, 77 tests green). When in doubt, the backend code is the source of truth — this doc
-> mirrors it as of 2026-07-16.
+> + sesiones reales done, 91 tests green). When in doubt, the backend code is the source of
+> truth — this doc mirrors it as of 2026-07-17.
 
 ---
 
@@ -44,9 +44,17 @@
   ```
   This includes 422 validation errors (e.g. `{"detalle": "Dato inválido en 'username'"}`),
   409 conflicts, 404s, 403s, and 500s (`{"detalle": "Error interno del servidor"}`).
-- There is **no auth**. The client identifies itself by sending its `usuario_id` in request bodies
-  and in the WS query string. The frontend must persist `usuario_id` (e.g. localStorage) after
-  creating a user — losing it means losing the identity (usernames are unique, re-creating fails with 409).
+- **Auth: opaque bearer sessions, no passwords.** `POST /api/usuarios` (register) and
+  `POST /api/sesiones` (login by username) return `{ token, usuario }`; the token is the UUID
+  PK of a `sesiones` row. The client persists it (localStorage `pqp_token`) and sends it as
+  `Authorization: Bearer <token>` on the **actor endpoints** (the five sala actions: crear,
+  practica, unirse, iniciar, finalizar — which take **no request body**) and as `?token=` on
+  the WS handshake. Everything else (reads, preguntas CRUD, puntos, marcador, constantes,
+  salud) is public. Missing header → `401 {"detalle": "No autenticado"}`; malformed/unknown/
+  revoked token → `401 {"detalle": "Sesión inválida"}`. Logout = `DELETE /api/sesiones/actual`
+  (deletes the row server-side; multiple concurrent sessions per user are allowed).
+  **Deliberate trade-off**: login needs only the username, so anyone who knows a name can
+  claim it — party-game trust level, accepted and documented.
 - Sala `codigo` alphabet: `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (6 chars, no 0/O/1/I/L). Uppercase.
   The frontend should uppercase user input before sending.
 
@@ -78,6 +86,11 @@ interface Usuario {
   id: string;            // UUID
   username: string;
   creado_en: string;     // ISO datetime
+}
+
+interface SesionCreada {  // response of register (POST /api/usuarios) and login (POST /api/sesiones)
+  token: string;          // UUID — the bearer session token
+  usuario: Usuario;
 }
 
 interface Opcion {
@@ -155,15 +168,29 @@ const soyAnfitrion = sala.anfitrion_id === miUsuarioId;
 |---|---|
 | `GET /api/salud` | → `200 {"estado": "ok"}` — health check |
 
-### 4.2 Usuarios
+### 4.2 Usuarios y sesiones
 
-**`POST /api/usuarios`** — create user (first thing the app does)
+**`POST /api/usuarios`** — register (creates the user AND its first session)
 - Body: `{ "username": string }` — 3–30 chars, **no whitespace** (regex `^\S+$`)
-- `201` → `Usuario`
+- `201` → `SesionCreada` (`{ token, usuario }` — store the token, it's the identity)
 - `409` `"Ese nombre ya está en uso"` — uniqueness is **case-insensitive and global**
 - `422` on invalid username
 
-**`GET /api/usuarios/{usuario_id}`**
+**`POST /api/sesiones`** — login by username (no password) for an existing user
+- Body: `{ "username": string }` (same constraints; lookup is case-insensitive)
+- `201` → `SesionCreada` (a **new** token; older sessions keep working)
+- `404 "Usuario no encontrado"` · `422`
+
+**`DELETE /api/sesiones/actual`** — logout (revokes the presented token)
+- Requires `Authorization: Bearer <token>`; no body.
+- `204` (the sesiones row is deleted; the token is dead everywhere, WS included)
+- `401 "No autenticado"` / `401 "Sesión inválida"`
+
+**`GET /api/usuarios/actual`** — who am I (session restore on app boot)
+- Requires `Authorization: Bearer <token>`.
+- `200` → `Usuario` · `401`
+
+**`GET /api/usuarios/{usuario_id}`** (public; the client no longer uses it to restore)
 - `200` → `Usuario` · `404` `"Usuario no encontrado"`
 
 ### 4.3 Preguntas (card deck CRUD — admin/content screens)
@@ -206,39 +233,41 @@ const soyAnfitrion = sala.anfitrion_id === miUsuarioId;
 
 ### 4.5 Salas
 
+All five **actor** endpoints below (`crear`, `practica`, `unirse`, `iniciar`, `finalizar`)
+require `Authorization: Bearer <token>` and take **no request body** — the actor is the
+token's user. All can answer `401` (`"No autenticado"` / `"Sesión inválida"`).
+
 **`POST /api/salas`** — create room; creator becomes anfitrión AND is auto-joined as a player
-- Body: `{ "usuario_id": string }`
-- `201` → `Sala` (grab `codigo` to share/join) · `404 "Usuario no encontrado"`
+- `201` → `Sala` (grab `codigo` to share/join)
 
 **`POST /api/salas/practica`** — Modo práctica: create a room with the caller as anfitrión
 **plus 2 bots** already created and joined (see §5.6). The server launches one in-process WS
 client task per bot right after responding, so the lobby reaches "3 conectados" by itself
 within a couple of seconds — no second human needed to pass the frontend's min-2 gate.
-- Body: `{ "usuario_id": string }`
+Each bot gets its **own session row** (its token feeds its WS connection; never revoked —
+accepted trade-off, the rows are tiny).
 - `201` → `Sala` (3 jugadores: the human + 2 `Bot-<Apodo>-<sufijo>`; the bots may still show
   `conectado=false` in this response — they connect asynchronously moments later and the
   usual `jugador_unido` events arrive over the WS)
-- `404 "Usuario no encontrado"` · `409 "No hay preguntas disponibles. Crea algunas en la
+- `409 "No hay preguntas disponibles. Crea algunas en la
   pantalla de preguntas antes de practicar."` (checked upfront — a practice game can't draw
   cards from an empty deck either)
 
 **`POST /api/salas/{codigo}/unirse`** — join room
-- Body: `{ "usuario_id": string }`
 - `200` → `Sala` (updated player list). **Idempotent** — joining twice is a no-op success.
-- `404 "Sala no encontrada"` · `409 "La partida ya empezó"` · `404 "Usuario no encontrado"`
+- `404 "Sala no encontrada"` · `409 "La partida ya empezó"`
 
 **`GET /api/salas/{codigo}`** — full room state. **This is also the reconnection endpoint**:
 after a WS drop, re-fetch this to resync, then reopen the WS.
 - `200` → `Sala` · `404 "Sala no encontrada"`
 
-**`POST /api/salas/{codigo}/iniciar`** — host starts the game
-- Body: `{ "usuario_id": string }` (must be anfitrión)
+**`POST /api/salas/{codigo}/iniciar`** — host starts the game (token user must be anfitrión)
 - Assigns shuffled `orden_turno` to every player, sets `estado=en_curso`, `turno_actual=0`.
 - Side effect: broadcasts WS `partida_iniciada` then `turno_actual` to all connected sockets.
 - `200` → `Sala` · `403 "Solo el anfitrión puede iniciar la partida"` · `409 "La partida ya empezó"`
 
-**`POST /api/salas/{codigo}/finalizar`** — host ends the game
-- Body: `{ "usuario_id": string }` (must be anfitrión; sala must be `en_curso`)
+**`POST /api/salas/{codigo}/finalizar`** — host ends the game (token user must be anfitrión;
+sala must be `en_curso`)
 - Single transaction: writes one `marcador_historico` row per player (`gano=true` for max score,
   ties included), resets everyone's `puntos` to 0, sets `estado=finalizada`.
 - Side effect: broadcasts WS `partida_finalizada`.
@@ -267,13 +296,16 @@ after a WS drop, re-fetch this to resync, then reopen the WS.
 ### 5.1 Connection
 
 ```
-WS ws://localhost:8000/ws/salas/{codigo}?usuario_id={uuid}
+WS ws://localhost:8000/ws/salas/{codigo}?token={session-token}
 ```
 
 - Connect **after** joining the sala via REST (membership is validated on connect).
-- The server accepts the socket first, then validates. On failure it **closes with code 4003**
-  and a Spanish reason: `"Sala no encontrada"` or `"No perteneces a esta sala"`.
-  Frontend: treat close code 4003 as "kick back to join screen with the reason".
+- The server accepts the socket first, then validates **the token first, membership second**:
+  - invalid/revoked/missing token → **close 4001** `"Sesión inválida"`. Frontend: the whole
+    session is dead — clear it and return to the register/login screen.
+  - valid token but bad room → **close 4003** with `"Sala no encontrada"` or
+    `"No perteneces a esta sala"`. Frontend: kick back to join screen with the reason.
+- The user behind the socket is the token's user (no `usuario_id` param anymore).
 - On successful connect the server sets your `conectado=true` and broadcasts `jugador_unido`
   to **everyone else** (you do NOT receive your own join event).
 - On disconnect (any reason) the server sets `conectado=false` and broadcasts `jugador_salio`
@@ -369,14 +401,20 @@ Behavior (server-side, `app/bots/jugador.py`; delays configurable via server env
 
 ## 6. Canonical client flows
 
-### 6.1 Onboarding
-1. `POST /api/usuarios {username}` → store `usuario_id` locally (localStorage).
-2. On 409, prompt for a different name (or if the stored id exists, `GET /api/usuarios/{id}` to restore session).
+### 6.1 Onboarding / session lifecycle
+1. Register: `POST /api/usuarios {username}` → `{token, usuario}`; store the token
+   (localStorage `pqp_token`) plus id/username for display.
+2. On 409 ("name taken"), offer `POST /api/sesiones {username}` — login by name, no password
+   (or prompt for a different name).
+3. Restore on boot: if a token is stored, `GET /api/usuarios/actual` with it; on 401 clear
+   everything and show the register/login form.
+4. Logout: `DELETE /api/sesiones/actual` (best-effort), then clear all `pqp_*` storage.
+   Any 401 anywhere means the session died server-side — treat it as an automatic logout.
 
 ### 6.2 Create / join lobby
-1. Host: `POST /api/salas {usuario_id}` → show `codigo` big on screen.
-2. Guests: `POST /api/salas/{codigo}/unirse {usuario_id}`.
-3. Everyone: open WS `/ws/salas/{codigo}?usuario_id=...`.
+1. Host: `POST /api/salas` (Bearer) → show `codigo` big on screen.
+2. Guests: `POST /api/salas/{codigo}/unirse` (Bearer).
+3. Everyone: open WS `/ws/salas/{codigo}?token=...`.
 4. Render lobby from `Sala.jugadores`; live-update with `jugador_unido` / `jugador_salio`.
 5. Host presses start → `POST /api/salas/{codigo}/iniciar` → everyone receives
    `partida_iniciada` + `turno_actual` over WS (the REST response is only relevant to the host).
@@ -390,9 +428,10 @@ Follow §5.5. All in-game actions are **WS events, not REST**.
 3. Optional: `GET /api/marcador` for the all-time leaderboard screen.
 
 ### 6.5 Reconnection (must-have)
-On WS close (non-4003) or app resume:
+On WS close (non-4001/4003) or app resume:
 1. `GET /api/salas/{codigo}` → rebuild full state (estado, jugadores, puntos, turno_actual → derive lector).
-2. Reopen the WS with the same `usuario_id`.
+2. Reopen the WS with the same `token`. (A 4001 close means the session itself is dead —
+   log out locally instead of retrying.)
 3. Limitation to design around: the REST snapshot does **not** include the active ronda's stage
    (leyendo/votando) or the current pregunta text. After reconnecting mid-round, the client won't
    know the card/stage until the next event arrives (`resultado_ronda`, `turno_actual`, …).
@@ -455,11 +494,13 @@ server/app/
 ├── constants.py          # PrediccionEnum, ResultadoEnum, Estado*Enum + Spanish labels
 ├── errores.py            # ErrorAplicacion(detalle, status_code)
 ├── manejadores.py        # global exception handlers → {"detalle"} bodies
-├── models/               # SQLAlchemy: usuario, pregunta(+Opcion), sala(+SalaJugador),
+├── seguridad.py          # HTTPBearer + deps usuario_actual / sesion_actual (401 on failure)
+├── models/               # SQLAlchemy: usuario, sesion, pregunta(+Opcion), sala(+SalaJugador),
 │                         #   ronda(+Voto), marcador
 ├── schemas/              # Pydantic request/response models (mirror §3)
-├── routers/              # usuarios, preguntas, constantes, salas, puntos (thin handlers)
-├── services/             # ALL game rules: salas.py, juego.py, preguntas.py, usuarios.py, marcador.py
+├── routers/              # usuarios, sesiones, preguntas, constantes, salas, puntos (thin handlers)
+├── services/             # ALL game rules: salas.py, juego.py, preguntas.py, usuarios.py,
+│                         #   sesiones.py (tokens), marcador.py
 ├── websocket/
 │   ├── manager.py        # in-memory {codigo: {usuario_id: WebSocket}}
 │   ├── router.py         # WS endpoint + event dispatch
@@ -470,7 +511,8 @@ server/app/
 
 ## 10. Suggested frontend surface (minimum screens)
 
-1. **Registro** — pick username (handle 409/422 inline).
+1. **Registro / login** — pick username (handle 409/422 inline; on 409 offer login by name)
+   or switch to login mode for an existing name; logged-in home shows "Cerrar sesión".
 2. **Inicio** — create sala / join by codigo; link to marcador histórico and preguntas admin.
 3. **Lobby** — codigo displayed big, live player list (conectado dots), host-only "Iniciar" button.
 4. **Juego** — the round loop UI (three sub-states per §5.5, role-dependent: lector vs votante),

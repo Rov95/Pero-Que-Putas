@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 from fastapi import FastAPI
 
@@ -15,10 +16,12 @@ class RegistroBots:
     def __init__(self) -> None:
         self._entradas: dict[str, list[tuple[asyncio.Task[None], BotJugador]]] = {}
 
-    def iniciar_bots(self, app: FastAPI, codigo: str, bots: list[Usuario]) -> None:
+    def iniciar_bots(
+        self, app: FastAPI, codigo: str, bots: list[tuple[Usuario, uuid.UUID]]
+    ) -> None:
         entradas = self._entradas.setdefault(codigo, [])
-        for bot in bots:
-            jugador = BotJugador(app, codigo, bot.id, bot.username)
+        for bot, token in bots:
+            jugador = BotJugador(app, codigo, bot.id, bot.username, token)
             tarea = asyncio.create_task(jugador.correr(), name=f"bot-{codigo}-{bot.id}")
             entradas.append((tarea, jugador))
             tarea.add_done_callback(lambda tarea, codigo=codigo: self._podar(codigo, tarea))

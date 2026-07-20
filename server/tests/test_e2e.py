@@ -6,10 +6,7 @@ from httpx import AsyncClient
 from httpx_ws import aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
 
-
-async def _crear_usuario(client: AsyncClient, username: str) -> str:
-    respuesta = await client.post("/api/usuarios", json={"username": username})
-    return respuesta.json()["id"]
+from tests.apoyo import registrar_usuario
 
 
 async def _drenar_jugador_unido(ws) -> None:
@@ -24,7 +21,8 @@ async def _drenar_jugador_unido(ws) -> None:
 async def test_partida_completa_de_3_jugadores_hasta_marcador(
     client: AsyncClient, app_prueba: FastAPI
 ) -> None:
-    ids = [await _crear_usuario(client, f"e2e{i}") for i in range(3)]
+    jugadores = [await registrar_usuario(client, f"e2e{i}") for i in range(3)]
+    ids = [j.usuario_id for j in jugadores]
     await client.post(
         "/api/preguntas",
         json={
@@ -34,27 +32,29 @@ async def test_partida_completa_de_3_jugadores_hasta_marcador(
         },
     )
 
-    creada = await client.post("/api/salas", json={"usuario_id": ids[0]})
+    creada = await client.post("/api/salas", headers=jugadores[0].cabeceras)
     codigo = creada.json()["codigo"]
-    for uid in ids[1:]:
-        await client.post(f"/api/salas/{codigo}/unirse", json={"usuario_id": uid})
+    for jugador in jugadores[1:]:
+        await client.post(f"/api/salas/{codigo}/unirse", headers=jugador.cabeceras)
 
     async with AsyncExitStack() as stack:
         sockets = {}
-        for uid in ids:
+        for jugador in jugadores:
             transport = ASGIWebSocketTransport(app=app_prueba)
             ws_client = await stack.enter_async_context(
                 AsyncClient(transport=transport, base_url="http://test")
             )
             ws = await stack.enter_async_context(
-                aconnect_ws(f"/ws/salas/{codigo}?usuario_id={uid}", ws_client)
+                aconnect_ws(f"/ws/salas/{codigo}?token={jugador.token}", ws_client)
             )
-            sockets[uid] = ws
+            sockets[jugador.usuario_id] = ws
 
         for uid in ids:
             await _drenar_jugador_unido(sockets[uid])
 
-        iniciada = await client.post(f"/api/salas/{codigo}/iniciar", json={"usuario_id": ids[0]})
+        iniciada = await client.post(
+            f"/api/salas/{codigo}/iniciar", headers=jugadores[0].cabeceras
+        )
         assert iniciada.status_code == 200
 
         lector_id = None
@@ -91,7 +91,9 @@ async def test_partida_completa_de_3_jugadores_hasta_marcador(
             assert msg["datos"]["acierto"] is True
             assert msg["datos"]["puntos_lector"] == 1
 
-    finalizada = await client.post(f"/api/salas/{codigo}/finalizar", json={"usuario_id": ids[0]})
+    finalizada = await client.post(
+        f"/api/salas/{codigo}/finalizar", headers=jugadores[0].cabeceras
+    )
     assert finalizada.status_code == 200
     cuerpo = finalizada.json()
     assert cuerpo["sala"]["estado"] == "finalizada"

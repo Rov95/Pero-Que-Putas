@@ -6,10 +6,7 @@ from httpx import AsyncClient
 from httpx_ws import aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
 
-
-async def _crear_usuario(client: AsyncClient, username: str) -> str:
-    respuesta = await client.post("/api/usuarios", json={"username": username})
-    return respuesta.json()["id"]
+from tests.apoyo import registrar_usuario
 
 
 async def _drenar_jugador_unido(ws) -> None:
@@ -22,33 +19,36 @@ async def _drenar_jugador_unido(ws) -> None:
 
 
 async def test_ronda_completa_con_secreto(client: AsyncClient, app_prueba: FastAPI) -> None:
-    ids = [await _crear_usuario(client, f"jugador{i}") for i in range(4)]
+    jugadores = [await registrar_usuario(client, f"jugador{i}") for i in range(4)]
+    ids = [j.usuario_id for j in jugadores]
     await client.post(
         "/api/preguntas",
         json={"enunciado": "¿Qué prefieres?", "opcion_1": "Opción 1", "opcion_2": "Opción 2"},
     )
-    creada = await client.post("/api/salas", json={"usuario_id": ids[0]})
+    creada = await client.post("/api/salas", headers=jugadores[0].cabeceras)
     codigo = creada.json()["codigo"]
-    for uid in ids[1:]:
-        await client.post(f"/api/salas/{codigo}/unirse", json={"usuario_id": uid})
+    for jugador in jugadores[1:]:
+        await client.post(f"/api/salas/{codigo}/unirse", headers=jugador.cabeceras)
 
     async with AsyncExitStack() as stack:
         sockets = {}
-        for uid in ids:
+        for jugador in jugadores:
             transport = ASGIWebSocketTransport(app=app_prueba)
             ws_client = await stack.enter_async_context(
                 AsyncClient(transport=transport, base_url="http://test")
             )
             ws = await stack.enter_async_context(
-                aconnect_ws(f"/ws/salas/{codigo}?usuario_id={uid}", ws_client)
+                aconnect_ws(f"/ws/salas/{codigo}?token={jugador.token}", ws_client)
             )
-            sockets[uid] = ws
+            sockets[jugador.usuario_id] = ws
 
         # Drain jugador_unido notifications fired as later sockets connected.
         for uid in ids:
             await _drenar_jugador_unido(sockets[uid])
 
-        iniciada = await client.post(f"/api/salas/{codigo}/iniciar", json={"usuario_id": ids[0]})
+        iniciada = await client.post(
+            f"/api/salas/{codigo}/iniciar", headers=jugadores[0].cabeceras
+        )
         assert iniciada.status_code == 200
 
         lector_id = None

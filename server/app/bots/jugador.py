@@ -26,11 +26,14 @@ INTERVALO_SONDEO_SEGUNDOS = 1.0
 
 
 class BotJugador:
-    def __init__(self, app: FastAPI, codigo: str, usuario_id: uuid.UUID, username: str) -> None:
+    def __init__(
+        self, app: FastAPI, codigo: str, usuario_id: uuid.UUID, username: str, token: uuid.UUID
+    ) -> None:
         self._app = app
         self._codigo = codigo
         self._usuario_id = usuario_id
         self._username = username
+        self._token = token
         self._soy_lector = False
         self._detener = asyncio.Event()
 
@@ -52,7 +55,7 @@ class BotJugador:
         transport = ASGIWebSocketTransport(app=self._app)
         async with AsyncClient(transport=transport, base_url="http://bot") as cliente:
             async with aconnect_ws(
-                f"/ws/salas/{self._codigo}?usuario_id={self._usuario_id}", cliente
+                f"/ws/salas/{self._codigo}?token={self._token}", cliente
             ) as ws:
                 while True:
                     if self._detener.is_set():

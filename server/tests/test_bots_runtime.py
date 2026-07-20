@@ -10,6 +10,7 @@ from httpx_ws.transport import ASGIWebSocketTransport
 
 from app.bots.registro import registro as registro_bots
 from app.config import settings as app_settings
+from tests.apoyo import registrar_usuario
 
 
 @pytest.fixture(autouse=True)
@@ -17,11 +18,6 @@ def _retrasos_de_bots_casi_cero(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_settings, "bots_retraso_min_ms", 0)
     monkeypatch.setattr(app_settings, "bots_retraso_max_ms", 0)
     monkeypatch.setattr(app_settings, "bots_retraso_siguiente_turno_ms", 0)
-
-
-async def _crear_usuario(client: AsyncClient, username: str) -> str:
-    respuesta = await client.post("/api/usuarios", json={"username": username})
-    return respuesta.json()["id"]
 
 
 async def _crear_pregunta(client: AsyncClient, opcion_1: str, opcion_2: str) -> None:
@@ -54,10 +50,11 @@ async def _esperar_bots_conectados(client: AsyncClient, codigo: str, humano_id: 
 
 
 async def test_bots_de_practica_quedan_conectados(client: AsyncClient) -> None:
-    humano_id = await _crear_usuario(client, "practicante1")
+    humano = await registrar_usuario(client, "practicante1")
+    humano_id = humano.usuario_id
     await _crear_pregunta(client, "Playa", "Montaña")
 
-    creada = await client.post("/api/salas/practica", json={"usuario_id": humano_id})
+    creada = await client.post("/api/salas/practica", headers=humano.cabeceras)
     assert creada.status_code == 201
     cuerpo = creada.json()
     assert len(cuerpo["jugadores"]) == 3
@@ -69,10 +66,11 @@ async def test_bots_de_practica_quedan_conectados(client: AsyncClient) -> None:
 
 
 async def test_detener_bots_deja_registro_vacio_y_desconecta(client: AsyncClient) -> None:
-    humano_id = await _crear_usuario(client, "practicante2")
+    humano = await registrar_usuario(client, "practicante2")
+    humano_id = humano.usuario_id
     await _crear_pregunta(client, "Perros", "Gatos")
 
-    creada = await client.post("/api/salas/practica", json={"usuario_id": humano_id})
+    creada = await client.post("/api/salas/practica", headers=humano.cabeceras)
     codigo = creada.json()["codigo"]
     await _esperar_bots_conectados(client, codigo, humano_id)
     assert registro_bots.cantidad_activos(codigo) == 2
@@ -89,10 +87,11 @@ async def test_detener_bots_deja_registro_vacio_y_desconecta(client: AsyncClient
 
 
 async def test_ronda_completa_de_practica(client: AsyncClient, app_prueba: FastAPI) -> None:
-    humano_id = await _crear_usuario(client, "practicante3")
+    humano = await registrar_usuario(client, "practicante3")
+    humano_id = humano.usuario_id
     await _crear_pregunta(client, "Código limpio", "Código rápido")
 
-    creada = await client.post("/api/salas/practica", json={"usuario_id": humano_id})
+    creada = await client.post("/api/salas/practica", headers=humano.cabeceras)
     codigo = creada.json()["codigo"]
     await _esperar_bots_conectados(client, codigo, humano_id)
 
@@ -102,11 +101,11 @@ async def test_ronda_completa_de_practica(client: AsyncClient, app_prueba: FastA
             AsyncClient(transport=transport, base_url="http://test")
         )
         ws = await stack.enter_async_context(
-            aconnect_ws(f"/ws/salas/{codigo}?usuario_id={humano_id}", ws_client)
+            aconnect_ws(f"/ws/salas/{codigo}?token={humano.token}", ws_client)
         )
 
         iniciada = await client.post(
-            f"/api/salas/{codigo}/iniciar", json={"usuario_id": humano_id}
+            f"/api/salas/{codigo}/iniciar", headers=humano.cabeceras
         )
         assert iniciada.status_code == 200
 

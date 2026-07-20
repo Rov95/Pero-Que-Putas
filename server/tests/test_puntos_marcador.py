@@ -1,23 +1,22 @@
 from httpx import AsyncClient
 
-
-async def _crear_usuario(client: AsyncClient, username: str) -> str:
-    respuesta = await client.post("/api/usuarios", json={"username": username})
-    return respuesta.json()["id"]
+from tests.apoyo import Credenciales, registrar_usuario
 
 
-async def _crear_sala_en_curso(client: AsyncClient, n_jugadores: int) -> tuple[str, list[str]]:
-    ids = [await _crear_usuario(client, f"pun{i}") for i in range(n_jugadores)]
-    creada = await client.post("/api/salas", json={"usuario_id": ids[0]})
+async def _crear_sala_en_curso(
+    client: AsyncClient, n_jugadores: int
+) -> tuple[str, list[Credenciales]]:
+    jugadores = [await registrar_usuario(client, f"pun{i}") for i in range(n_jugadores)]
+    creada = await client.post("/api/salas", headers=jugadores[0].cabeceras)
     codigo = creada.json()["codigo"]
-    for uid in ids[1:]:
-        await client.post(f"/api/salas/{codigo}/unirse", json={"usuario_id": uid})
-    await client.post(f"/api/salas/{codigo}/iniciar", json={"usuario_id": ids[0]})
-    return codigo, ids
+    for jugador in jugadores[1:]:
+        await client.post(f"/api/salas/{codigo}/unirse", headers=jugador.cabeceras)
+    await client.post(f"/api/salas/{codigo}/iniciar", headers=jugadores[0].cabeceras)
+    return codigo, jugadores
 
 
 async def test_obtener_puntos(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 2)
+    codigo, _ = await _crear_sala_en_curso(client, 2)
 
     respuesta = await client.get(f"/api/salas/{codigo}/puntos")
     assert respuesta.status_code == 200
@@ -27,22 +26,24 @@ async def test_obtener_puntos(client: AsyncClient) -> None:
 
 
 async def test_establecer_puntos(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 2)
+    codigo, jugadores = await _crear_sala_en_curso(client, 2)
 
-    respuesta = await client.put(f"/api/salas/{codigo}/puntos/{ids[0]}", json={"puntos": 5})
+    respuesta = await client.put(
+        f"/api/salas/{codigo}/puntos/{jugadores[0].usuario_id}", json={"puntos": 5}
+    )
     assert respuesta.status_code == 200
     assert respuesta.json()["puntos"] == 5
 
     verificacion = await client.get(f"/api/salas/{codigo}/puntos")
     puntos_por_id = {j["usuario_id"]: j["puntos"] for j in verificacion.json()}
-    assert puntos_por_id[ids[0]] == 5
-    assert puntos_por_id[ids[1]] == 0
+    assert puntos_por_id[jugadores[0].usuario_id] == 5
+    assert puntos_por_id[jugadores[1].usuario_id] == 0
 
 
 async def test_reiniciar_puntos(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 2)
-    await client.put(f"/api/salas/{codigo}/puntos/{ids[0]}", json={"puntos": 5})
-    await client.put(f"/api/salas/{codigo}/puntos/{ids[1]}", json={"puntos": 3})
+    codigo, jugadores = await _crear_sala_en_curso(client, 2)
+    await client.put(f"/api/salas/{codigo}/puntos/{jugadores[0].usuario_id}", json={"puntos": 5})
+    await client.put(f"/api/salas/{codigo}/puntos/{jugadores[1].usuario_id}", json={"puntos": 3})
 
     respuesta = await client.delete(f"/api/salas/{codigo}/puntos")
     assert respuesta.status_code == 204
@@ -52,21 +53,21 @@ async def test_reiniciar_puntos(client: AsyncClient) -> None:
 
 
 async def test_finalizar_partida_transfiere_a_marcador(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 3)
-    await client.put(f"/api/salas/{codigo}/puntos/{ids[0]}", json={"puntos": 5})
-    await client.put(f"/api/salas/{codigo}/puntos/{ids[1]}", json={"puntos": 2})
+    codigo, jugadores = await _crear_sala_en_curso(client, 3)
+    await client.put(f"/api/salas/{codigo}/puntos/{jugadores[0].usuario_id}", json={"puntos": 5})
+    await client.put(f"/api/salas/{codigo}/puntos/{jugadores[1].usuario_id}", json={"puntos": 2})
 
-    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", json={"usuario_id": ids[0]})
+    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", headers=jugadores[0].cabeceras)
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
     assert cuerpo["sala"]["estado"] == "finalizada"
     assert all(j["puntos"] == 0 for j in cuerpo["sala"]["jugadores"])
 
     marcador_por_id = {m["usuario_id"]: m for m in cuerpo["marcador_final"]}
-    assert marcador_por_id[ids[0]]["puntos_finales"] == 5
-    assert marcador_por_id[ids[0]]["gano"] is True
-    assert marcador_por_id[ids[1]]["gano"] is False
-    assert marcador_por_id[ids[2]]["gano"] is False
+    assert marcador_por_id[jugadores[0].usuario_id]["puntos_finales"] == 5
+    assert marcador_por_id[jugadores[0].usuario_id]["gano"] is True
+    assert marcador_por_id[jugadores[1].usuario_id]["gano"] is False
+    assert marcador_por_id[jugadores[2].usuario_id]["gano"] is False
 
     historico = await client.get("/api/marcador")
     assert historico.status_code == 200
@@ -78,36 +79,36 @@ async def test_finalizar_partida_transfiere_a_marcador(client: AsyncClient) -> N
 
 
 async def test_finalizar_partida_empate_dos_ganadores(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 2)
-    await client.put(f"/api/salas/{codigo}/puntos/{ids[0]}", json={"puntos": 3})
-    await client.put(f"/api/salas/{codigo}/puntos/{ids[1]}", json={"puntos": 3})
+    codigo, jugadores = await _crear_sala_en_curso(client, 2)
+    await client.put(f"/api/salas/{codigo}/puntos/{jugadores[0].usuario_id}", json={"puntos": 3})
+    await client.put(f"/api/salas/{codigo}/puntos/{jugadores[1].usuario_id}", json={"puntos": 3})
 
-    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", json={"usuario_id": ids[0]})
+    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", headers=jugadores[0].cabeceras)
     assert respuesta.status_code == 200
     ganadores = [m for m in respuesta.json()["marcador_final"] if m["gano"]]
     assert len(ganadores) == 2
 
 
 async def test_finalizar_no_anfitrion(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 2)
+    codigo, jugadores = await _crear_sala_en_curso(client, 2)
 
-    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", json={"usuario_id": ids[1]})
+    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", headers=jugadores[1].cabeceras)
     assert respuesta.status_code == 403
 
 
 async def test_finalizar_no_en_curso(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 2)
-    await client.post(f"/api/salas/{codigo}/finalizar", json={"usuario_id": ids[0]})
+    codigo, jugadores = await _crear_sala_en_curso(client, 2)
+    await client.post(f"/api/salas/{codigo}/finalizar", headers=jugadores[0].cabeceras)
 
-    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", json={"usuario_id": ids[0]})
+    respuesta = await client.post(f"/api/salas/{codigo}/finalizar", headers=jugadores[0].cabeceras)
     assert respuesta.status_code == 409
 
 
 async def test_marcador_filtra_por_usuario(client: AsyncClient) -> None:
-    codigo, ids = await _crear_sala_en_curso(client, 2)
-    await client.post(f"/api/salas/{codigo}/finalizar", json={"usuario_id": ids[0]})
+    codigo, jugadores = await _crear_sala_en_curso(client, 2)
+    await client.post(f"/api/salas/{codigo}/finalizar", headers=jugadores[0].cabeceras)
 
-    respuesta = await client.get("/api/marcador", params={"usuario_id": ids[0]})
+    respuesta = await client.get("/api/marcador", params={"usuario_id": jugadores[0].usuario_id})
     assert respuesta.status_code == 200
     assert len(respuesta.json()) == 1
     assert respuesta.json()[0]["username"] == "pun0"

@@ -11,6 +11,7 @@ from app.errores import ErrorAplicacion
 from app.models.marcador import MarcadorHistorico
 from app.models.pregunta import Pregunta
 from app.models.sala import Sala, SalaJugador
+from app.models.sesion import Sesion
 from app.models.usuario import Usuario
 
 ALFABETO_CODIGO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # sin 0/O, 1/I/L
@@ -65,7 +66,7 @@ async def crear_sala(sesion: AsyncSession, usuario_id: uuid.UUID) -> Sala:
 
 async def crear_sala_practica(
     sesion: AsyncSession, usuario_id: uuid.UUID
-) -> tuple[Sala, list[Usuario]]:
+) -> tuple[Sala, list[tuple[Usuario, uuid.UUID]]]:
     await _obtener_usuario_o_404(sesion, usuario_id)
 
     hay_pregunta = await sesion.scalar(
@@ -80,12 +81,16 @@ async def crear_sala_practica(
 
     sala = await crear_sala(sesion, usuario_id)
     bots = await crear_usuarios_bot(sesion, CANTIDAD_BOTS_PRACTICA)
+    # Los bots se conectan por el mismo WS autenticado que un jugador real,
+    # así que cada uno necesita su propia sesión (el id es su token bearer).
+    sesiones_bots = [Sesion(usuario_id=bot.id) for bot in bots]
+    sesion.add_all(sesiones_bots)
     await sesion.commit()
 
     for bot in bots:
         sala = await unirse_a_sala(sesion, sala.codigo, bot.id)
 
-    return sala, bots
+    return sala, [(bot, sesion_bot.id) for bot, sesion_bot in zip(bots, sesiones_bots)]
 
 
 async def unirse_a_sala(sesion: AsyncSession, codigo: str, usuario_id: uuid.UUID) -> Sala:

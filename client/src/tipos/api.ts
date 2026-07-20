@@ -1,4 +1,4 @@
-import type { MarcadorFinalEntrada, PrediccionClave, Sala } from './modelos'
+import type { MarcadorFinalEntrada, PrediccionClave, Sala, Usuario } from './modelos'
 
 export interface ErrorRespuesta {
   detalle: string
@@ -20,8 +20,10 @@ export interface CrearUsuarioBody {
   username: string
 }
 
-export interface AccionSalaBody {
-  usuario_id: string
+/** Respuesta de POST /api/usuarios y POST /api/sesiones: el token es la sesión bearer. */
+export interface SesionCreada {
+  token: string
+  usuario: Usuario
 }
 
 export interface FinalizarRespuesta {
@@ -56,5 +58,11 @@ export interface ParametrosPaginacion {
 /** Extrae el mensaje en español de un ErrorApi; relanza cualquier otro error inesperado. */
 export function detalleDeError(error: unknown): string {
   if (error instanceof ErrorApi) return error.detalle
+  throw error
+}
+
+/** Como detalleDeError, pero conserva el status HTTP (p. ej. para distinguir un 409). */
+export function datosDeError(error: unknown): { detalle: string; status: number } {
+  if (error instanceof ErrorApi) return { detalle: error.detalle, status: error.status }
   throw error
 }

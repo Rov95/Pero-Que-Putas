@@ -1,13 +1,16 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit'
+import { sesionesApi } from '../../api/sesionesApi'
 import { usuariosApi } from '../../api/usuariosApi'
-import { detalleDeError } from '../../tipos/api'
+import { datosDeError, type SesionCreada } from '../../tipos/api'
 import type { Usuario } from '../../tipos/modelos'
 import { almacenamiento } from '../../utilidades/almacenamiento'
+import { salaActions } from './salaSlice'
 
 interface EstadoSesion {
   usuario: Usuario | null
   cargando: boolean
   error: string | null
+  errorEstado: number | null
   restaurada: boolean
 }
 
@@ -15,16 +18,30 @@ const estadoInicial: EstadoSesion = {
   usuario: null,
   cargando: false,
   error: null,
+  errorEstado: null,
   restaurada: false,
 }
 
-export const crearUsuario = createAsyncThunk<Usuario, string, { rejectValue: string }>(
+type RechazoSesion = { detalle: string; status: number }
+
+export const crearUsuario = createAsyncThunk<SesionCreada, string, { rejectValue: RechazoSesion }>(
   'sesion/crearUsuario',
   async (username, { rejectWithValue }) => {
     try {
       return await usuariosApi.crear({ username })
     } catch (error) {
-      return rejectWithValue(detalleDeError(error))
+      return rejectWithValue(datosDeError(error))
+    }
+  },
+)
+
+export const iniciarSesion = createAsyncThunk<SesionCreada, string, { rejectValue: RechazoSesion }>(
+  'sesion/iniciarSesion',
+  async (username, { rejectWithValue }) => {
+    try {
+      return await sesionesApi.iniciar({ username })
+    } catch (error) {
+      return rejectWithValue(datosDeError(error))
     }
   },
 )
@@ -32,10 +49,10 @@ export const crearUsuario = createAsyncThunk<Usuario, string, { rejectValue: str
 export const restaurarSesion = createAsyncThunk<Usuario | null>(
   'sesion/restaurarSesion',
   async () => {
-    const usuarioId = almacenamiento.obtenerUsuarioId()
-    if (!usuarioId) return null
+    const token = almacenamiento.obtenerToken()
+    if (!token) return null
     try {
-      return await usuariosApi.obtener(usuarioId)
+      return await usuariosApi.obtenerActual()
     } catch {
       almacenamiento.limpiarSesion()
       return null
@@ -43,17 +60,42 @@ export const restaurarSesion = createAsyncThunk<Usuario | null>(
   },
 )
 
+export const cerrarSesion = createAsyncThunk<void, void>(
+  'sesion/cerrarSesion',
+  async (_, { dispatch }) => {
+    // Primero se corta el WS y se limpia la sala (el middleware aún necesita el usuario
+    // en el estado para su lógica de reconexión); después se revoca el token en el servidor.
+    dispatch(salaActions.desconectarWs())
+    dispatch(salaActions.limpiarSala())
+    try {
+      await sesionesApi.cerrar()
+    } catch {
+      // mejor esfuerzo: la sesión local se cierra aunque el servidor no responda
+    }
+    almacenamiento.limpiarSesion()
+  },
+)
+
+function guardarCredenciales(payload: SesionCreada): void {
+  almacenamiento.guardarUsuarioId(payload.usuario.id)
+  almacenamiento.guardarUsername(payload.usuario.username)
+  almacenamiento.guardarToken(payload.token)
+}
+
 const sesionSlice = createSlice({
   name: 'sesion',
   initialState: estadoInicial,
   reducers: {
-    cerrarSesion: (state) => {
+    // El servidor respondió 401: el token ya no vale y se descarta la sesión local.
+    sesionExpirada: (state) => {
       state.usuario = null
       state.error = null
+      state.errorEstado = null
       almacenamiento.limpiarSesion()
     },
     limpiarErrorSesion: (state) => {
       state.error = null
+      state.errorEstado = null
     },
   },
   extraReducers: (builder) => {
@@ -61,16 +103,32 @@ const sesionSlice = createSlice({
       .addCase(crearUsuario.pending, (state) => {
         state.cargando = true
         state.error = null
+        state.errorEstado = null
       })
-      .addCase(crearUsuario.fulfilled, (state, action: PayloadAction<Usuario>) => {
+      .addCase(crearUsuario.fulfilled, (state, action: PayloadAction<SesionCreada>) => {
         state.cargando = false
-        state.usuario = action.payload
-        almacenamiento.guardarUsuarioId(action.payload.id)
-        almacenamiento.guardarUsername(action.payload.username)
+        state.usuario = action.payload.usuario
+        guardarCredenciales(action.payload)
       })
       .addCase(crearUsuario.rejected, (state, action) => {
         state.cargando = false
-        state.error = action.payload ?? 'Error de conexión con el servidor'
+        state.error = action.payload?.detalle ?? 'Error de conexión con el servidor'
+        state.errorEstado = action.payload?.status ?? null
+      })
+      .addCase(iniciarSesion.pending, (state) => {
+        state.cargando = true
+        state.error = null
+        state.errorEstado = null
+      })
+      .addCase(iniciarSesion.fulfilled, (state, action: PayloadAction<SesionCreada>) => {
+        state.cargando = false
+        state.usuario = action.payload.usuario
+        guardarCredenciales(action.payload)
+      })
+      .addCase(iniciarSesion.rejected, (state, action) => {
+        state.cargando = false
+        state.error = action.payload?.detalle ?? 'Error de conexión con el servidor'
+        state.errorEstado = action.payload?.status ?? null
       })
       .addCase(restaurarSesion.pending, (state) => {
         state.cargando = true
@@ -83,6 +141,20 @@ const sesionSlice = createSlice({
       .addCase(restaurarSesion.rejected, (state) => {
         state.cargando = false
         state.restaurada = true
+      })
+      .addCase(cerrarSesion.pending, (state) => {
+        state.cargando = true
+      })
+      .addCase(cerrarSesion.fulfilled, (state) => {
+        state.cargando = false
+        state.usuario = null
+        state.error = null
+        state.errorEstado = null
+      })
+      .addCase(cerrarSesion.rejected, (state) => {
+        // El thunk nunca relanza errores de red, pero por si acaso: cerrar igual.
+        state.cargando = false
+        state.usuario = null
       })
   },
 })

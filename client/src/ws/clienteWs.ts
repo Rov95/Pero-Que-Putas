@@ -23,9 +23,9 @@ export class ConexionSala {
     this.callbacks = callbacks
   }
 
-  conectar(codigo: string, usuarioId: string): void {
+  conectar(codigo: string, token: string): void {
     this.cerradoIntencionalmente = false
-    const socket = new WebSocket(urlWsSala(codigo, usuarioId))
+    const socket = new WebSocket(urlWsSala(codigo, token))
 
     socket.onopen = () => {
       this.callbacks.onAbrir()

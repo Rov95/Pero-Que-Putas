@@ -5,6 +5,7 @@ import puntajesReducer from '../../store/slices/puntajesSlice'
 import salaReducer, { salaActions } from '../../store/slices/salaSlice'
 import sesionReducer, { restaurarSesion } from '../../store/slices/sesionSlice'
 import uiReducer from '../../store/slices/uiSlice'
+import { almacenamiento } from '../../utilidades/almacenamiento'
 import type { CallbacksConexionSala, ConexionSala } from '../../ws/clienteWs'
 import { crearWsMiddleware } from '../../ws/wsMiddleware'
 
@@ -28,16 +29,16 @@ class ConexionSalaFalsa {
   mensajesEnviados: unknown[] = []
   cerrada = false
   codigoConectado: string | null = null
-  usuarioIdConectado: string | null = null
+  tokenConectado: string | null = null
 
   constructor(callbacks: CallbacksConexionSala) {
     this.callbacks = callbacks
     ConexionSalaFalsa.instancias.push(this)
   }
 
-  conectar(codigo: string, usuarioId: string) {
+  conectar(codigo: string, token: string) {
     this.codigoConectado = codigo
-    this.usuarioIdConectado = usuarioId
+    this.tokenConectado = token
   }
 
   enviar(sobre: unknown) {
@@ -68,11 +69,13 @@ function crearStorePrueba() {
   store.dispatch(
     restaurarSesion.fulfilled({ id: 'u1', username: 'ana', creado_en: '2026-01-01T00:00:00Z' }, 'req'),
   )
+  almacenamiento.guardarToken('token-1')
   return store
 }
 
 describe('wsMiddleware', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.useFakeTimers()
   })
 
@@ -80,14 +83,30 @@ describe('wsMiddleware', () => {
     vi.useRealTimers()
   })
 
-  it('conectarWs abre una conexión con el código y el usuario_id de la sesión', () => {
+  it('conectarWs abre una conexión con el código y el token de la sesión', () => {
     const store = crearStorePrueba()
 
     store.dispatch(salaActions.conectarWs('ABCDEF'))
 
     expect(ConexionSalaFalsa.instancias).toHaveLength(1)
     expect(ConexionSalaFalsa.instancias[0].codigoConectado).toBe('ABCDEF')
-    expect(ConexionSalaFalsa.instancias[0].usuarioIdConectado).toBe('u1')
+    expect(ConexionSalaFalsa.instancias[0].tokenConectado).toBe('token-1')
+  })
+
+  it('un cierre 4001 (sesión inválida) descarta la sesión y no reintenta', async () => {
+    const store = crearStorePrueba()
+    store.dispatch(salaActions.conectarWs('ABCDEF'))
+    const conexion = ConexionSalaFalsa.instancias[0]
+
+    conexion.callbacks.onCierre({ codigo: 4001, razon: 'Sesión inválida', intencional: false })
+
+    expect(store.getState().sesion.usuario).toBeNull()
+    expect(store.getState().sala.motivoExpulsion).toBe('Sesión inválida')
+    expect(almacenamiento.obtenerToken()).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    expect(ConexionSalaFalsa.instancias).toHaveLength(1)
   })
 
   it('no reintenta tras un cierre 4003 (expulsión)', async () => {

@@ -10,10 +10,10 @@
 > - [`frontend.md`](frontend.md) — the React client: screens, Redux slices, WS middleware,
 >   conventions, known gotchas.
 >
-> Verified against the code on branch `main` as of 2026-07-16. Status: backend (10 phases),
-> frontend (5 phases) and Modo práctica (5 phases) fully implemented and verified
-> end-to-end; 77 pytest + 30 vitest tests and two full-game Playwright E2Es (3 humans /
-> 1 human + 2 bots), all green.
+> Verified against the code on branch `main` as of 2026-07-17. Status: backend (10 phases),
+> frontend (5 phases), Modo práctica (5 phases) and sesiones reales + logout fully
+> implemented and verified end-to-end; 91 pytest + 41 vitest tests and three Playwright
+> E2Es (full game 3 humans / 1 human + 2 bots / logout-login), all green.
 
 ---
 
@@ -23,7 +23,9 @@ Spanish-language Colombian party game, "¿qué prefieres?" style. Everything use
 and **every identifier in the codebase** (models, actions, routes, variables) — is in
 Spanish.
 
-1. Players register a **username** (no auth — identity is a stored `usuario_id` UUID).
+1. Players register a **username** (no password). The server issues an opaque **session
+   token** (a `sesiones` row); the client stores it and can log out ("Cerrar sesión",
+   revokes it server-side) or log back in by username alone (`POST /api/sesiones`).
 2. They gather in a **sala** (room) via a 6-char **codigo** (alphabet without 0/O/1/I/L).
    The creator is the **anfitrión** (host).
 3. Host starts the game → players get a shuffled **orden_turno**. Each round one player is
@@ -57,16 +59,21 @@ play a round until someone creates cards at `/preguntas`.
   CRUD go over **REST**; everything inside a round (`robar_carta`, `prediccion_secreta`,
   `voto`, `siguiente_turno`) goes over the **WebSocket** as `{evento, datos}` envelopes,
   and the server broadcasts game events to the whole sala.
-- **Identity**: no auth anywhere. The client persists `usuario_id` in localStorage and
-  sends it in request bodies / the WS query string. Usernames are globally unique
-  (case-insensitive) — losing the id means the name is unrecoverable (409 on re-create).
+- **Identity**: real server-side sessions, **no passwords**. Register/login return an
+  opaque bearer token (the UUID PK of a `sesiones` row); the client persists it in
+  localStorage and sends it as `Authorization: Bearer` on actor endpoints and as
+  `?token=` on the WS handshake. Logout (`DELETE /api/sesiones/actual`) deletes the row —
+  missing row ⇒ 401 everywhere. **Accepted trade-off**: login is by username alone, so
+  anyone who knows a name can claim it (same trust level as a party game needs).
+  Usernames are globally unique (case-insensitive); a lost session is recoverable via
+  `POST /api/sesiones {username}`.
 - **Reconnection contract**: `GET /api/salas/{codigo}` is the resync snapshot; the client
   always re-fetches it before reopening a dropped socket. The snapshot does NOT include
   the active round's stage/card (known limitation, see §7).
 - **Errors**: every REST error body, any status, is `{"detalle": "<Spanish message>"}`.
   WS business-rule violations never close the socket — the server replies an `error`
   event to the offending socket only. WS close code **4003** = expelled (not a member /
-  sala gone).
+  sala gone); **4001** = invalid/revoked session token.
 - **Secrecy invariants**: individual votes and the lector's prediction are never
   observable (REST or WS) before the `resultado_ronda` reveal.
 - **Bots (Modo práctica)**: `POST /api/salas/practica` creates a sala with the caller as
@@ -91,20 +98,21 @@ Pero-Que-Putas/
 │   │   ├── config.py        # Settings: DATABASE_URL, CORS_ORIGINS (.env)
 │   │   ├── constants.py     # enums + Spanish labels (predictions, estados)
 │   │   ├── errores.py / manejadores.py   # ErrorAplicacion → {"detalle"} bodies
-│   │   ├── models/          # SQLAlchemy: usuario, pregunta(+opcion), sala(+sala_jugador),
+│   │   ├── seguridad.py     # HTTPBearer + deps usuario_actual / sesion_actual (401)
+│   │   ├── models/          # SQLAlchemy: usuario, sesion, pregunta(+opcion), sala(+sala_jugador),
 │   │   │                    #   ronda(+voto), marcador_historico
 │   │   ├── schemas/         # Pydantic v2 request/response
-│   │   ├── routers/         # thin: usuarios, preguntas, constantes, salas, puntos
+│   │   ├── routers/         # thin: usuarios, sesiones, preguntas, constantes, salas, puntos
 │   │   ├── services/        # ALL game rules: salas.py, juego.py, preguntas.py, usuarios.py, marcador.py
 │   │   ├── websocket/       # manager.py (in-memory sockets per sala), router.py (dispatch), eventos.py
 │   │   └── bots/            # Modo práctica: fabrica.py (usuarios Bot-*), jugador.py (WS client loop), registro.py (task registry)
-│   ├── alembic/             # migrations (single initial schema revision)
-│   ├── tests/               # pytest (77 tests, incl. bots runtime + práctica) — real Postgres via pgserver
+│   ├── alembic/             # migrations (4 revisions; latest: e5a2d84fb17c sesiones)
+│   ├── tests/               # pytest (91 tests, incl. sesiones + bots runtime + práctica) — real Postgres via pgserver
 │   ├── docker-compose.yml   # optional Postgres 16 for those with Docker
 │   └── pyproject.toml       # uv-managed, Python 3.12
 ├── client/                  # React frontend  → details: Context/PQP/frontend.md, client/README.md
 │   ├── src/                 # (see frontend.md §3 for the full map)
-│   ├── e2e/                 # Playwright: juego-completo.spec.ts (3 browsers) + practica.spec.ts (1 humano + 2 bots)
+│   ├── e2e/                 # Playwright: juego-completo.spec.ts (3 browsers) + practica.spec.ts (1 humano + 2 bots) + sesion.spec.ts (logout/login)
 │   └── package.json         # Vite 8, React 19, RTK 2, Tailwind 4, Vitest, Playwright
 └── README.md                # user-facing quickstart (Spanish)
 ```
@@ -120,6 +128,8 @@ Pero-Que-Putas/
 ## 5. Data model (5 core tables + join/detail tables)
 
 - `usuarios` — id (UUID), username (unique, case-insensitive), creado_en.
+- `sesiones` — id (UUID, **the bearer token itself**), usuario_id (FK, cascade), creado_en.
+  One row per live session (multi-device OK); logout deletes the row. No expiry.
 - `preguntas` + `opciones` — a card (`enunciado` = the question text, NOT NULL) and its
   exactly-2 options (cascade delete). `eliminada` (bool) marks soft-deleted cards:
   a played card can't be hard-deleted (`rondas.pregunta_id` references it), so DELETE
@@ -137,7 +147,9 @@ Pero-Que-Putas/
 
 (Exact payloads, status codes, and error strings: `backend-api.md` §4–§5.)
 
-**REST**: `POST /api/usuarios` · `GET /api/usuarios/{id}` · preguntas CRUD
+**REST**: `POST /api/usuarios` (→ `{token, usuario}`) · `POST /api/sesiones` (login by
+username → `{token, usuario}`) · `DELETE /api/sesiones/actual` (logout, Bearer) ·
+`GET /api/usuarios/actual` (restore, Bearer) · `GET /api/usuarios/{id}` · preguntas CRUD
 (`GET/POST /api/preguntas` — body `{enunciado, opcion_1, opcion_2}` —,
 `PUT …/{id}` full-card update, `GET/PUT …/{id}/opciones`, `DELETE …/{id}` — hard if
 never played, soft otherwise) ·
@@ -147,8 +159,11 @@ never played, soft otherwise) ·
 `POST /api/salas/{codigo}/iniciar` (host) · `POST /api/salas/{codigo}/finalizar` (host;
 atomic: historic rows + reset + estado) · puntos utilities
 (`GET/PUT/DELETE /api/salas/{codigo}/puntos…`) · `GET /api/marcador`.
+The five **actor** sala endpoints (crear, practica, unirse, iniciar, finalizar) require
+`Authorization: Bearer` and take **no body** — the actor is the token's user. The rest
+stay public.
 
-**WS** `ws://…/ws/salas/{codigo}?usuario_id=…` — client sends: `robar_carta`,
+**WS** `ws://…/ws/salas/{codigo}?token=…` — client sends: `robar_carta`,
 `prediccion_secreta`, `voto`, `siguiente_turno`. Server broadcasts: `jugador_unido`,
 `jugador_salio`, `partida_iniciada`, `turno_actual`, `carta_robada`,
 `prediccion_registrada`, `voto_registrado` (n/m progress, anonymous),
@@ -193,8 +208,8 @@ cd server && uv run alembic upgrade head && uv run uvicorn app.main:app --reload
 cd client && npm install && npm run dev
 
 # Tests:
-cd server && uv run pytest           # backend (72 tests; own pgserver, no Docker needed)
-cd client && npm test                # frontend unit (Vitest, 30 tests)
+cd server && uv run pytest           # backend (91 tests; own pgserver, no Docker needed)
+cd client && npm test                # frontend unit (Vitest, 41 tests)
 cd client && npm run test:e2e        # browser E2E only (needs backend already running)
 ```
 
@@ -241,4 +256,12 @@ against 2 bots.
   soft-deletes those (`preguntas.eliminada`, Alembic revision `c7e4a91f30d8`): still
   `204`, hidden from list/GET/PUT and from `robar_carta`'s draw, round history intact.
   Never-played cards are still hard-deleted.
+- **Done — sesiones reales + Cerrar sesión** (2026-07-17): the old trust-the-client
+  `usuario_id` identity was replaced by server-side sessions (`sesiones` table, Alembic
+  revision `e5a2d84fb17c`). Register/login (`POST /api/sesiones`, by username, no
+  password) return `{token, usuario}`; actor endpoints and the WS handshake validate the
+  token (`seguridad.py`; WS close 4001); logout = `DELETE /api/sesiones/actual` + the
+  "Cerrar sesión" button on the home screen; the register form gained a login mode.
+  Bots get their own session rows (never revoked — accepted, rows are tiny). Dedicated
+  E2E: `client/e2e/sesion.spec.ts`.
 - **Pending**: nothing planned; the open items are the limitations in §7.

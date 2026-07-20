@@ -4,17 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bots.registro import registro as registro_bots
 from app.database import obtener_sesion
 from app.models.sala import Sala
+from app.models.usuario import Usuario
 from app.schemas.puntos import MarcadorFinalEntrada
-from app.schemas.sala import (
-    FinalizarRespuesta,
-    FinalizarSala,
-    IniciarSala,
-    JugadorLeer,
-    PracticaCrear,
-    SalaCrear,
-    SalaLeer,
-    UnirseSala,
-)
+from app.schemas.sala import FinalizarRespuesta, JugadorLeer, SalaLeer
+from app.seguridad import usuario_actual
 from app.services import juego as servicio_juego
 from app.services import salas as servicio_salas
 from app.websocket import eventos
@@ -50,26 +43,31 @@ def _jugador_payload(jugador) -> dict:
 
 @router.post("", response_model=SalaLeer, status_code=status.HTTP_201_CREATED)
 async def crear_sala(
-    datos: SalaCrear, sesion: AsyncSession = Depends(obtener_sesion)
+    usuario: Usuario = Depends(usuario_actual),
+    sesion: AsyncSession = Depends(obtener_sesion),
 ) -> SalaLeer:
-    sala = await servicio_salas.crear_sala(sesion, datos.usuario_id)
+    sala = await servicio_salas.crear_sala(sesion, usuario.id)
     return _a_sala_leer(sala)
 
 
 @router.post("/practica", response_model=SalaLeer, status_code=status.HTTP_201_CREATED)
 async def crear_sala_practica(
-    datos: PracticaCrear, request: Request, sesion: AsyncSession = Depends(obtener_sesion)
+    request: Request,
+    usuario: Usuario = Depends(usuario_actual),
+    sesion: AsyncSession = Depends(obtener_sesion),
 ) -> SalaLeer:
-    sala, bots = await servicio_salas.crear_sala_practica(sesion, datos.usuario_id)
+    sala, bots = await servicio_salas.crear_sala_practica(sesion, usuario.id)
     registro_bots.iniciar_bots(request.app, sala.codigo, bots)
     return _a_sala_leer(sala)
 
 
 @router.post("/{codigo}/unirse", response_model=SalaLeer)
 async def unirse_a_sala(
-    codigo: str, datos: UnirseSala, sesion: AsyncSession = Depends(obtener_sesion)
+    codigo: str,
+    usuario: Usuario = Depends(usuario_actual),
+    sesion: AsyncSession = Depends(obtener_sesion),
 ) -> SalaLeer:
-    sala = await servicio_salas.unirse_a_sala(sesion, codigo, datos.usuario_id)
+    sala = await servicio_salas.unirse_a_sala(sesion, codigo, usuario.id)
     return _a_sala_leer(sala)
 
 
@@ -81,9 +79,11 @@ async def consultar_sala(codigo: str, sesion: AsyncSession = Depends(obtener_ses
 
 @router.post("/{codigo}/iniciar", response_model=SalaLeer)
 async def iniciar_partida(
-    codigo: str, datos: IniciarSala, sesion: AsyncSession = Depends(obtener_sesion)
+    codigo: str,
+    usuario: Usuario = Depends(usuario_actual),
+    sesion: AsyncSession = Depends(obtener_sesion),
 ) -> SalaLeer:
-    sala = await servicio_salas.iniciar_partida(sesion, codigo, datos.usuario_id)
+    sala = await servicio_salas.iniciar_partida(sesion, codigo, usuario.id)
 
     orden = sorted(
         (_jugador_payload(j) | {"orden_turno": j.orden_turno} for j in sala.jugadores),
@@ -99,9 +99,11 @@ async def iniciar_partida(
 
 @router.post("/{codigo}/finalizar", response_model=FinalizarRespuesta)
 async def finalizar_partida(
-    codigo: str, datos: FinalizarSala, sesion: AsyncSession = Depends(obtener_sesion)
+    codigo: str,
+    usuario: Usuario = Depends(usuario_actual),
+    sesion: AsyncSession = Depends(obtener_sesion),
 ) -> FinalizarRespuesta:
-    sala, marcador_final = await servicio_salas.finalizar_partida(sesion, codigo, datos.usuario_id)
+    sala, marcador_final = await servicio_salas.finalizar_partida(sesion, codigo, usuario.id)
 
     marcador_final_schemas = [MarcadorFinalEntrada(**entrada) for entrada in marcador_final]
     await manager.difundir(

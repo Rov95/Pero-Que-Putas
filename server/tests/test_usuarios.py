@@ -5,9 +5,10 @@ async def test_crear_usuario(client: AsyncClient) -> None:
     respuesta = await client.post("/api/usuarios", json={"username": "andres"})
     assert respuesta.status_code == 201
     cuerpo = respuesta.json()
-    assert cuerpo["username"] == "andres"
-    assert "id" in cuerpo
-    assert "creado_en" in cuerpo
+    assert "token" in cuerpo
+    assert cuerpo["usuario"]["username"] == "andres"
+    assert "id" in cuerpo["usuario"]
+    assert "creado_en" in cuerpo["usuario"]
 
 
 async def test_crear_usuario_duplicado(client: AsyncClient) -> None:
@@ -26,7 +27,7 @@ async def test_crear_usuario_duplicado_case_insensitive(client: AsyncClient) -> 
 
 async def test_obtener_usuario(client: AsyncClient) -> None:
     creado = await client.post("/api/usuarios", json={"username": "andres"})
-    usuario_id = creado.json()["id"]
+    usuario_id = creado.json()["usuario"]["id"]
 
     respuesta = await client.get(f"/api/usuarios/{usuario_id}")
     assert respuesta.status_code == 200

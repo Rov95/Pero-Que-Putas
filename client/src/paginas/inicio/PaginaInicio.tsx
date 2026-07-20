@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { salasApi } from '../../api/salasApi'
-import { useAppSelector } from '../../store/hooks'
+import { useAppDispatch, useAppSelector } from '../../store/hooks'
+import { cerrarSesion } from '../../store/slices/sesionSlice'
 import { almacenamiento } from '../../utilidades/almacenamiento'
 import { useEnfoqueAlMontar } from '../../utilidades/useEnfoqueAlMontar'
 import BotonCrearSala from './BotonCrearSala'
@@ -10,6 +11,7 @@ import FormularioRegistro from './FormularioRegistro'
 import FormularioUnirse from './FormularioUnirse'
 
 export default function PaginaInicio() {
+  const dispatch = useAppDispatch()
   const usuario = useAppSelector((state) => state.sesion.usuario)
   const [salaGuardada, setSalaGuardada] = useState<string | null>(null)
   const refContenido = useEnfoqueAlMontar<HTMLDivElement>()
@@ -79,6 +81,13 @@ export default function PaginaInicio() {
             <Link to="/preguntas" className="hover:text-white">
               Administrar preguntas
             </Link>
+            <button
+              type="button"
+              onClick={() => dispatch(cerrarSesion())}
+              className="hover:text-white"
+            >
+              Cerrar sesión
+            </button>
           </nav>
         </div>
       )}

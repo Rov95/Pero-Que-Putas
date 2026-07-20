@@ -15,6 +15,7 @@ from app.models.sala import Sala, SalaJugador
 from app.schemas.juego import PrediccionSecretaDatos, VotoDatos
 from app.services import juego as servicio_juego
 from app.services import salas as servicio_salas
+from app.services import sesiones as servicio_sesiones
 from app.websocket import eventos
 from app.websocket.manager import manager
 
@@ -121,10 +122,17 @@ async def _despachar(
 async def endpoint_sala(
     websocket: WebSocket,
     codigo: str,
-    usuario_id: uuid.UUID,
+    token: str = "",
     sesion: AsyncSession = Depends(obtener_sesion),
 ) -> None:
     await websocket.accept()
+
+    try:
+        usuario, _ = await servicio_sesiones.usuario_por_token(sesion, token)
+    except ErrorAplicacion:
+        await websocket.close(code=4001, reason="Sesión inválida")
+        return
+    usuario_id = usuario.id
 
     sala, jugador = await _obtener_jugador(sesion, codigo, usuario_id)
     if sala is None:

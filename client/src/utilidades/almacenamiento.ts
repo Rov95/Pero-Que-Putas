@@ -1,6 +1,7 @@
 const CLAVES = {
   usuarioId: 'pqp_usuario_id',
   username: 'pqp_username',
+  token: 'pqp_token',
   salaCodigo: 'pqp_sala_codigo',
 } as const
 
@@ -35,6 +36,9 @@ export const almacenamiento = {
   obtenerUsername: () => obtener(CLAVES.username),
   guardarUsername: (username: string) => guardar(CLAVES.username, username),
 
+  obtenerToken: () => obtener(CLAVES.token),
+  guardarToken: (token: string) => guardar(CLAVES.token, token),
+
   obtenerSalaCodigo: () => obtener(CLAVES.salaCodigo),
   guardarSalaCodigo: (codigo: string) => guardar(CLAVES.salaCodigo, codigo),
   eliminarSalaCodigo: () => eliminar(CLAVES.salaCodigo),
@@ -42,5 +46,7 @@ export const almacenamiento = {
   limpiarSesion: () => {
     eliminar(CLAVES.usuarioId)
     eliminar(CLAVES.username)
+    eliminar(CLAVES.token)
+    eliminar(CLAVES.salaCodigo)
   },
 }

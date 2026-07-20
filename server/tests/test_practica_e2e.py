@@ -10,6 +10,7 @@ from httpx_ws.transport import ASGIWebSocketTransport
 
 from app.bots.registro import registro as registro_bots
 from app.config import settings as app_settings
+from tests.apoyo import registrar_usuario
 
 
 @pytest.fixture(autouse=True)
@@ -27,11 +28,6 @@ async def _sin_fugas_de_bots():
         return registro_bots.cantidad_activos() == 0
 
     await _esperar_hasta(_condicion, "Quedaron tareas de bots vivas tras el test")
-
-
-async def _crear_usuario(client: AsyncClient, username: str) -> str:
-    respuesta = await client.post("/api/usuarios", json={"username": username})
-    return respuesta.json()["id"]
 
 
 async def _crear_pregunta(client: AsyncClient, opcion_1: str, opcion_2: str) -> None:
@@ -113,11 +109,12 @@ async def _jugar_ronda(ws, humano_id: str, turno_msg: dict) -> dict:
 async def test_partida_completa_de_practica_hasta_marcador(
     client: AsyncClient, app_prueba: FastAPI
 ) -> None:
-    humano_id = await _crear_usuario(client, "practicante_full")
+    humano = await registrar_usuario(client, "practicante_full")
+    humano_id = humano.usuario_id
     for i in range(3):
         await _crear_pregunta(client, f"Opción A{i}", f"Opción B{i}")
 
-    creada = await client.post("/api/salas/practica", json={"usuario_id": humano_id})
+    creada = await client.post("/api/salas/practica", headers=humano.cabeceras)
     assert creada.status_code == 201
     codigo = creada.json()["codigo"]
     await _esperar_bots_conectados(client, codigo, humano_id)
@@ -131,10 +128,10 @@ async def test_partida_completa_de_practica_hasta_marcador(
             AsyncClient(transport=transport, base_url="http://test")
         )
         ws = await stack.enter_async_context(
-            aconnect_ws(f"/ws/salas/{codigo}?usuario_id={humano_id}", ws_client)
+            aconnect_ws(f"/ws/salas/{codigo}?token={humano.token}", ws_client)
         )
 
-        iniciada = await client.post(f"/api/salas/{codigo}/iniciar", json={"usuario_id": humano_id})
+        iniciada = await client.post(f"/api/salas/{codigo}/iniciar", headers=humano.cabeceras)
         assert iniciada.status_code == 200
 
         partida = await ws.receive_json(timeout=5)
@@ -152,7 +149,7 @@ async def test_partida_completa_de_practica_hasta_marcador(
         assert lectores_vistos == {humano_id} | ids_bots
 
         finalizada = await client.post(
-            f"/api/salas/{codigo}/finalizar", json={"usuario_id": humano_id}
+            f"/api/salas/{codigo}/finalizar", headers=humano.cabeceras
         )
         assert finalizada.status_code == 200
         assert len(finalizada.json()["marcador_final"]) == 3
@@ -179,10 +176,11 @@ async def test_bots_de_practica_abandonada_expiran_solos(
 ) -> None:
     monkeypatch.setattr(app_settings, "bots_vida_maxima_segundos", 0.3)
 
-    humano_id = await _crear_usuario(client, "practicante_abandona")
+    humano = await registrar_usuario(client, "practicante_abandona")
+    humano_id = humano.usuario_id
     await _crear_pregunta(client, "Perros", "Gatos")
 
-    creada = await client.post("/api/salas/practica", json={"usuario_id": humano_id})
+    creada = await client.post("/api/salas/practica", headers=humano.cabeceras)
     codigo = creada.json()["codigo"]
 
     # No iniciamos la partida: los bots deben colgar solos al agotar su vida máxima.
@@ -206,9 +204,10 @@ async def test_carrera_de_votos_de_bots_resuelve_una_sola_vez(
         await _crear_pregunta(client, f"Playa{i}", f"Montaña{i}")
 
     for intento in range(8):
-        humano_id = await _crear_usuario(client, f"racer{intento}")
+        humano = await registrar_usuario(client, f"racer{intento}")
+        humano_id = humano.usuario_id
 
-        creada = await client.post("/api/salas/practica", json={"usuario_id": humano_id})
+        creada = await client.post("/api/salas/practica", headers=humano.cabeceras)
         codigo = creada.json()["codigo"]
         await _esperar_bots_conectados(client, codigo, humano_id)
 
@@ -218,11 +217,11 @@ async def test_carrera_de_votos_de_bots_resuelve_una_sola_vez(
                 AsyncClient(transport=transport, base_url="http://test")
             )
             ws = await stack.enter_async_context(
-                aconnect_ws(f"/ws/salas/{codigo}?usuario_id={humano_id}", ws_client)
+                aconnect_ws(f"/ws/salas/{codigo}?token={humano.token}", ws_client)
             )
 
             iniciada = await client.post(
-                f"/api/salas/{codigo}/iniciar", json={"usuario_id": humano_id}
+                f"/api/salas/{codigo}/iniciar", headers=humano.cabeceras
             )
             assert iniciada.status_code == 200
 

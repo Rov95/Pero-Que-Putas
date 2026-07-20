@@ -1,7 +1,9 @@
 import type { Middleware, ThunkDispatch, UnknownAction } from '@reduxjs/toolkit'
 import type { RootState } from '../store'
 import { salaActions, sincronizarSala } from '../store/slices/salaSlice'
+import { sesionActions } from '../store/slices/sesionSlice'
 import type { EventoServidor } from '../tipos/eventosWs'
+import { almacenamiento } from '../utilidades/almacenamiento'
 import { ConexionSala, type CallbacksConexionSala } from './clienteWs'
 
 const RETRASOS_RECONEXION_MS = [1000, 2000, 4000, 8000, 10000]
@@ -71,7 +73,8 @@ export function crearWsMiddleware(
 
     const abrirConexion = (codigo: string) => {
       const usuarioId = store.getState().sesion.usuario?.id
-      if (!usuarioId) return
+      const token = almacenamiento.obtenerToken()
+      if (!usuarioId || !token) return
 
       conexion = fabricaConexion({
         onAbrir: () => {
@@ -81,6 +84,14 @@ export function crearWsMiddleware(
         onMensaje: manejarMensaje,
         onCierre: ({ codigo: codigoCierre, razon, intencional }) => {
           if (intencional) return
+
+          if (codigoCierre === 4001) {
+            // Token revocado/expirado: la sesión entera dejó de valer, no solo el socket.
+            codigoActual = null
+            store.dispatch(sesionActions.sesionExpirada())
+            store.dispatch(salaActions.wsExpulsado(razon || 'Tu sesión ya no es válida'))
+            return
+          }
 
           if (codigoCierre === 4003) {
             codigoActual = null
@@ -94,7 +105,7 @@ export function crearWsMiddleware(
           programarReconexion()
         },
       })
-      conexion.conectar(codigo, usuarioId)
+      conexion.conectar(codigo, token)
     }
 
     const programarReconexion = () => {
